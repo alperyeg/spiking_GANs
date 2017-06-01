@@ -1,7 +1,6 @@
 import numpy as np
 import neo
 
-from scipy.stats import poisson
 from scipy.misc import factorial
 from quantities import Hz, s, ms
 from elephant.spike_train_generation import homogeneous_poisson_process
@@ -17,31 +16,52 @@ class DataDistribution(object):
        deviation of 0.5. It has a sample function that returns a given
        number of samples (sorted by value) from the distribution.
         """
+        # Normal sample parameter
         self.mu = 4
         self.sigma = 0.5
+        # Poisson sample parameter
+        self.lam = 10
         # TODO set variable parameter
         self.lambdas = np.linspace(0, 20, 100)
 
     def normal_sample(self, n):
+        """
+
+        :param n: int, size of sample
+        :return: samples from the normal distribution
+        """
         samples = np.random.normal(loc=self.mu, scale=self.sigma, size=n)
         samples.sort()
         return samples
 
-    def poisson_sample(self, n):
+    def poisson_pmf(self, n):
         """
-        
+
         :param n: size of the array for the poisson distribution, int
-        :return: a poisson distribution realized by a random lambda 
+        :return: a poisson distribution realized by a random lambda
         """
         def _poisson_sample(x, lam):
-            return np.exp(-lam) * lam ** x * factorial(x) ** -1
+            pmf = np.exp(-lam) * lam ** x * factorial(x) ** - 1
+            pmf[pmf < 0] = 0
+            return pmf
         xs = np.arange(n)
         rand_lam = self.lambdas[np.random.randint(100)]
-        return _poisson_sample(xs, rand_lam)
+        p = _poisson_sample(xs, rand_lam)
+        # TODO: Sort for stratified sampling? for that set fixed lambda and make array variable
+        return p
 
+    def poisson_sample(self, n):
+        """
+
+        :param n: int, size of samples
+        :return: samples from the parametrized Poisson distribution
+        """
+        samples = np.random.poisson(self.lam, size=n)
+        samples.sort()
+        return samples
 
     @staticmethod
-    def poisson_step_rate(self, t_start=0 * s, t_stop=100 * s, rate1=5 * Hz,
+    def poisson_step_rate(t_start=0 * s, t_stop=100 * s, rate1=5 * Hz,
                           rate2=10 * Hz, n_samples=1000, min_len=1000):
         """
         Returns a poisson process with step rate given by `rate1` and `rate2`
@@ -63,7 +83,7 @@ class DataDistribution(object):
         return sts
 
     @staticmethod
-    def poisson_nonstat_sample(self, rate1=5 * Hz, rate2=10 * Hz, dt=1 * ms,
+    def poisson_nonstat_sample(rate1=5 * Hz, rate2=10 * Hz, dt=1 * ms,
                                t0=1000 * ms, binned=True, binsize=100 * ms):
         """
         Returns a non-stationary poisson process with step rate given by 

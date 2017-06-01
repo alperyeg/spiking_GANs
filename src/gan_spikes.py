@@ -10,53 +10,21 @@ from __future__ import division
 
 import argparse
 import numpy as np
-import matplotlib.pyplot as plt
 import seaborn as sns
 import tensorflow as tf
+import plotting as plots
 
-from matplotlib import animation
-from scipy.stats import norm
+from scipy.stats import norm, poisson
 from six.moves import range
 from data_generation import DataDistribution, GeneratorDistribution
 
 sns.set(color_codes=True)
 
-# TODO add plotting module and data generation module
+# TODO try different, more powerful generator
 
-seed = 1234
+seed = 123
 np.random.seed(seed)
 tf.set_random_seed(seed)
-
-
-# class DataDistribution(object):
-#     def __init__(self):
-#         """
-#        Real data distribution, a simple Gaussian with mean 4 and standard
-#        deviation of 0.5. It has a sample function that returns a given
-#        number of samples (sorted by value) from the distribution.
-#         """
-#         self.mu = 4
-#         self.sigma = 0.5
-#
-#     def sample(self, N):
-#         samples = np.random.normal(self.mu, self.sigma, N)
-#         samples.sort()
-#         return samples
-#
-#
-# class GeneratorDistribution(object):
-#     def __init__(self, range_):
-#         """
-#          Generator input noise distribution (with a similar sample function).
-#          A stratified sampling approach for the generator input noise - the
-#          samples are first generated uniformly over a specified range,
-#          and then randomly perturbed.
-#         """
-#         self.range = range_
-#
-#     def sample(self, N):
-#         return np.linspace(-self.range, self.range, N) + np.random.random(N)\
-#             * 0.01
 
 
 def linear(inpt, output_dim, scope=None, stddev=1.0):
@@ -241,6 +209,8 @@ class GAN(object):
         
         """
         # TODO in optimizing steps try MomentumOptimizer
+
+        # Define the pre training
         with tf.variable_scope('D_pre'):
             self.pre_input = tf.placeholder(tf.float32,
                                             shape=(self.batch_size, 1))
@@ -268,6 +238,7 @@ class GAN(object):
             self.x = tf.placeholder(tf.float32, shape=(self.batch_size, 1))
             self.D1 = discriminator(self.x, self.mlp_hidden_size,
                                     self.minibatch)
+            # make a copy of D using same variables, but with G as input
             scope.reuse_variables()
             self.D2 = discriminator(self.G, self.mlp_hidden_size,
                                     self.minibatch)
@@ -299,9 +270,13 @@ class GAN(object):
             # pretraining discriminator
             num_pretrain_steps = 1000
             for step in range(num_pretrain_steps):
-                # TODO : change pre trainer
-                d = (np.random.random(self.batch_size) - 0.5) * 10.0
-                labels = norm.pdf(d, loc=self.data.mu, scale=self.data.sigma)
+                # TODO : change pre trainer, e.g. random mu?
+                # d = (np.random.random(self.batch_size) - 0.5) * 10.0
+                # (b-a) * random_dist + a
+                d = self.gen.upper_range - self.gen.lower_range * np.random.random(
+                    self.batch_size) + self.gen.lower_range
+                # labels = norm.pdf(d, loc=self.data.mu, scale=self.data.sigma)
+                labels = poisson.pmf(d, 10)
                 pretrain_loss, _ = session.run([self.pre_loss, self.pre_opt], {
                     self.pre_input: np.reshape(d, (self.batch_size, 1)),
                     self.pre_labels: np.reshape(labels, (self.batch_size, 1))
@@ -316,7 +291,7 @@ class GAN(object):
 
             for step in range(self.num_steps):
                 # update discriminator
-                x = self.data.normal_sample(self.batch_size)
+                x = self.data.poisson_sample(self.batch_size)
                 z = self.gen.sample(self.batch_size)
                 loss_d, _ = session.run([self.loss_d, self.opt_d], {
                     self.x: np.reshape(x, (self.batch_size, 1)),
@@ -333,127 +308,30 @@ class GAN(object):
                     print('{}: {}\t{}'.format(step, loss_d, loss_g))
 
                 if self.anim_path:
-                    self.anim_frames.append(self._samples(session))
+                    self.anim_frames.append(plots.samples(session))
 
             if self.anim_path:
-                self._save_animation()
+                plots.save_animation(self.anim_path, self.anim_frames,
+                                     lower_range=self.gen.lower_range,
+                                     upper_range=self.gen.upper_range)
             else:
-                self._plot_distributions(session)
+                plots.plot_distributions(session, save=False,
+                                         lower_range=self.gen.lower_range,
+                                         upper_range=self.gen.upper_range,
+                                         batch_size=self.batch_size,
+                                         D1=self.D1,
+                                         G=self.G,
+                                         x=self.x,
+                                         z=self.z)
             merged = tf.summary.merge_all()
             writer = tf.summary.FileWriter('logs', session.graph)
             writer.close()
 
-    def _samples(self, session, num_points=10000, num_bins=100):
-        """
-        Return a tuple (db, pd, pg), where db is the current decision
-        boundary, pd is a histogram of samples from the data distribution,
-        and pg is a histogram of generated samples.
-        """
-        xs = np.linspace(self.gen.lower_range, self.gen.upper_range,
-                         num_points)
-        bins = np.linspace(self.gen.lower_range, self.gen.upper_range,
-                           num_bins)
-
-        # decision boundary
-        db = np.zeros((num_points, 1))
-        for i in range(num_points // self.batch_size):
-            db[self.batch_size * i:self.batch_size * (i + 1)] = session.run(self.D1, {
-                self.x: np.reshape(
-                    xs[self.batch_size * i:self.batch_size * (i + 1)],
-                    (self.batch_size, 1)
-                )
-            })
-
-        # data distribution
-        d = self.data.normal_sample(num_points)
-        pd, _ = np.histogram(d, bins=bins, density=True)
-
-        # generated samples
-        zs = np.linspace(self.gen.lower_range, self.gen.upper_range, num_points)
-        g = np.zeros((num_points, 1))
-        for i in range(num_points // self.batch_size):
-            g[self.batch_size * i:self.batch_size * (i + 1)] = session.run(self.G, {
-                self.z: np.reshape(
-                    zs[self.batch_size * i:self.batch_size * (i + 1)],
-                    (self.batch_size, 1)
-                )
-            })
-        pg, _ = np.histogram(g, bins=bins, density=True)
-
-        return db, pd, pg
-
-    def _plot_distributions(self, session):
-        db, pd, pg = self._samples(session)
-        db_x = np.linspace(self.gen.lower_range, self.gen.upper_range, len(db))
-        p_x = np.linspace(self.gen.lower_range, self.gen.upper_range, len(pd))
-        f, ax = plt.subplots(1)
-        ax.plot(db_x, db, label='decision boundary')
-        ax.set_ylim(0, 1)
-        plt.plot(p_x, pd, label='real data')
-        plt.plot(p_x, pg, label='generated data')
-        plt.title('1D Generative Adversarial Network')
-        plt.xlabel('Data values')
-        plt.ylabel('Probability density')
-        plt.legend()
-        plt.savefig('fig1.png', format='png')
-        plt.show()
-
-    def _save_animation(self):
-        f, ax = plt.subplots(figsize=(6, 4))
-        f.suptitle('1D Generative Adversarial Network', fontsize=15)
-        plt.xlabel('Data values')
-        plt.ylabel('Probability density')
-        ax.set_xlim(-6, 6)
-        ax.set_ylim(0, 1.4)
-        line_db, = ax.plot([], [], label='decision boundary')
-        line_pd, = ax.plot([], [], label='real data')
-        line_pg, = ax.plot([], [], label='generated data')
-        frame_number = ax.text(
-            0.02,
-            0.95,
-            '',
-            horizontalalignment='left',
-            verticalalignment='top',
-            transform=ax.transAxes
-        )
-        ax.legend()
-
-        db, pd, _ = self.anim_frames[0]
-        db_x = np.linspace(self.gen.lower_range, self.gen.upper_range, len(db))
-        p_x = np.linspace(self.gen.lower_range, self.gen.upper_range, len(pd))
-
-        def init():
-            line_db.set_data([], [])
-            line_pd.set_data([], [])
-            line_pg.set_data([], [])
-            frame_number.set_text('')
-            return line_db, line_pd, line_pg, frame_number
-
-        def animate(i):
-            frame_number.set_text(
-                'Frame: {}/{}'.format(i, len(self.anim_frames)))
-            db, pd, pg = self.anim_frames[i]
-            line_db.set_data(db_x, db)
-            line_pd.set_data(p_x, pd)
-            line_pg.set_data(p_x, pg)
-            return line_db, line_pd, line_pg, frame_number
-
-        anim = animation.FuncAnimation(
-            f,
-            animate,
-            init_func=init,
-            frames=len(self.anim_frames),
-            blit=True
-        )
-        Writer = animation.writers['ffmpeg']
-        writer = Writer(fps=30, bitrate=1800)
-        # anim.save(self.anim_path, fps=30, extra_args=['-vcodec', 'libx264'])
-        anim.save(self.anim_path, writer=writer)
-
 
 def main(**kwargs):
     model = GAN(DataDistribution(),
-                GeneratorDistribution(lower=-8, upper=8),
+                GeneratorDistribution(kwargs['lower_range'],
+                                      kwargs['upper_range']),
                 num_steps=kwargs['num_steps'],
                 batch_size=kwargs['batch_size'],
                 minibatch=kwargs['minibatch'],
@@ -478,10 +356,13 @@ def parse_args():
     return parser.parse_args()
 
 if __name__ == '__main__':
-    num_steps = 1200
+    num_steps = 2000
     batch_size = 12
     minibatch = False
-    log_every = 10
+    lower_range = 0
+    upper_range = 20
+    log_every = 100
     anim_path = ""
     main(num_steps=num_steps, batch_size=batch_size, minibatch=minibatch,
+         lower_range=lower_range, upper_range=upper_range,
          log_every=log_every, anim_path=anim_path)
