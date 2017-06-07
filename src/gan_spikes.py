@@ -190,6 +190,8 @@ class GAN(object):
         self.anim_path = anim_path
         self.anim_frames = []
         self.learning_rate = learning_rate
+        self.loss_d_plot = []
+        self.loss_g_plot = []
 
         # can use a higher learning rate when not using the minibatch layer
         if self.minibatch:
@@ -304,6 +306,8 @@ class GAN(object):
                     self.z: np.reshape(z, (self.batch_size, 1))
                 })
 
+                self.loss_d_plot.append(loss_d)
+                self.loss_g_plot.append(loss_g)
                 if step % self.log_every == 0:
                     print('{}: {}\t{}'.format(step, loss_d, loss_g))
 
@@ -330,6 +334,7 @@ class GAN(object):
                                          G=self.G,
                                          x=self.x,
                                          z=self.z)
+                plots.plot_training_loss(self.loss_g_plot, self.loss_d_plot)
             merged = tf.summary.merge_all()
             writer = tf.summary.FileWriter('logs', session.graph)
             writer.close()

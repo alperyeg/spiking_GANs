@@ -84,7 +84,7 @@ class DataDistribution(object):
 
     @staticmethod
     def poisson_nonstat_sample(rate1=5 * Hz, rate2=10 * Hz, dt=1 * ms,
-                               t0=1000 * ms, binned=True, binsize=100 * ms):
+                               t0=1000 * ms, binned=True, num_bins=100):
         """
         Returns a non-stationary poisson process with step rate given by 
         `rate1` and `rate2`
@@ -96,7 +96,7 @@ class DataDistribution(object):
                                        sampling_rate=1 * Hz)
         spikes = poisson_nonstat(rate_signal)
         if binned:
-            binned_sts = BinnedSpikeTrain(spikes, binsize=binsize)
+            binned_sts = BinnedSpikeTrain(spikes, num_bins=num_bins)
             return binned_sts
         return spikes
 

@@ -91,6 +91,21 @@ def samples(session, num_points=10000, num_bins=100, **kwargs):
     return db, pd, pg
 
 
+def plot_training_loss(loss_d, loss_g):
+    """
+    Plots the training loss
+    :param loss_d:
+    :param loss_g:
+    :return:
+    """
+    plt.plot(1 - np.array(loss_d), label='loss_d')
+    plt.plot(loss_g, label='loss_g')
+    plt.legend()
+    plt.xlabel("iteration step")
+    plt.ylabel("loss")
+    plt.show()
+
+
 def save_animation(path, anim_frames, **kwargs):
     lower_range = kwargs['lower_range']
     upper_range = kwargs['upper_range']
