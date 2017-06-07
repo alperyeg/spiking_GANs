@@ -308,7 +308,14 @@ class GAN(object):
                     print('{}: {}\t{}'.format(step, loss_d, loss_g))
 
                 if self.anim_path:
-                    self.anim_frames.append(plots.samples(session))
+                    self.anim_frames.append(plots.samples(session, save=False,
+                                                          lower_range=self.gen.lower_range,
+                                                          upper_range=self.gen.upper_range,
+                                                          batch_size=self.batch_size,
+                                                          D1=self.D1,
+                                                          G=self.G,
+                                                          x=self.x,
+                                                          z=self.z))
 
             if self.anim_path:
                 plots.save_animation(self.anim_path, self.anim_frames,
