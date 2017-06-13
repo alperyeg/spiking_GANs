@@ -7,6 +7,8 @@ from elephant.spike_train_generation import homogeneous_poisson_process
 from elephant.conversion import BinnedSpikeTrain
 from jelephant.core.stocmod import poisson_nonstat
 
+np.random.seed(123)
+
 
 class DataDistribution(object):
 
@@ -125,3 +127,7 @@ class GeneratorDistribution(object):
     def sample(self, n):
         return np.linspace(self.lower_range, self.upper_range,
                            n) + np.random.random(n) * 0.01
+
+    def sample_int(self, n):
+        return np.linspace(self.lower_range, self.upper_range, n) + \
+               np.random.randint(-self.upper_range/2, self.upper_range/2, n)

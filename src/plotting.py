@@ -29,17 +29,21 @@ def dist_plot(data, hist=True, kde=True, rug=False, label='spike times'):
 def plot_distributions(session, save=False, **kwargs):
     low_range = kwargs['lower_range']
     up_range = kwargs['upper_range']
-    db, pd, pg = samples(session, num_points=50, num_bins=10, **kwargs)
+    db, p_d, p_g = samples(session, num_points=10000, num_bins=1000, **kwargs)
     db_x = np.linspace(low_range, up_range, len(db))
-    p_x = np.linspace(low_range, up_range, len(pd))
+    # p_x = np.linspace(low_range, up_range, len(pd))
     f, ax = plt.subplots(1)
     ax.plot(db_x, db, label='decision boundary')
-    # ax.set_ylim(0, 1)
-    plt.plot(p_x, pd, label='real data')
-    plt.plot(p_x, pg, label='generated data')
+    ax.set_ylim(0, 1)
+    # plt.plot(p_x, pd, label='real data')
+    sns.distplot(p_d,  bins=20, label='real data', hist=True, kde=True,
+                 rug=False)
+    sns.distplot(p_g,  bins=10, label='generated data', hist=True, kde=True,
+                 rug=False)
+    # plt.plot(p_x, pg, label='generated data')
     plt.title('1D Generative Adversarial Network')
-    plt.xlabel('Data values')
-    plt.ylabel('Poisson Distribution')
+    plt.xlabel('count')
+    plt.ylabel('Non Stationary Poisson Distribution')
     plt.legend()
     if save:
         plt.savefig('fig1.png', format='png')
@@ -48,9 +52,9 @@ def plot_distributions(session, save=False, **kwargs):
 
 def samples(session, num_points=10000, num_bins=100, **kwargs):
     """
-    Return a tuple (db, pd, pg), where db is the current decision
-    boundary, pd is a histogram of samples from the data distribution,
-    and pg is a histogram of generated samples.
+    Return a tuple (db, d, g), where db is the current decision
+    boundary, d is a sample from the data distribution,
+    and g is a list of generated samples.
     """
     low_range = kwargs['lower_range']
     up_range = kwargs['upper_range']
@@ -59,8 +63,9 @@ def samples(session, num_points=10000, num_bins=100, **kwargs):
     G = kwargs['G']
     x = kwargs['x']
     z = kwargs['z']
+    data = kwargs['data']
     xs = np.linspace(low_range, up_range, num_points)
-    bins = np.linspace(low_range, up_range, num_bins)
+    # bins = np.linspace(low_range, up_range, num_bins)
 
     # decision boundary
     db = np.zeros((num_points, 1))
@@ -73,9 +78,10 @@ def samples(session, num_points=10000, num_bins=100, **kwargs):
         })
 
     # data distribution
-    data = dgen.DataDistribution()
-    d = data.poisson_sample(num_points)
-    pd, _ = np.histogram(d, bins=bins, density=True)
+    idx = np.random.randint(low=low_range, high=up_range)
+    d = data[idx]
+    # d = np.mean(data, axis=0)
+    # pd, _ = np.histogram(d, bins=bins, density=True)
 
     # generated samples
     zs = np.linspace(low_range, up_range, num_points)
@@ -87,8 +93,8 @@ def samples(session, num_points=10000, num_bins=100, **kwargs):
                 (batch_size, 1)
             )
         })
-    pg, _ = np.histogram(g, bins=bins, density=True)
-    return db, pd, pg
+    # pg, _ = np.histogram(g, bins=bins, density=True)
+    return db, d, g
 
 
 def plot_training_loss(loss_d, loss_g):
@@ -157,5 +163,4 @@ def save_animation(path, anim_frames, **kwargs):
     )
     Writer = animation.writers['ffmpeg']
     writer = Writer(fps=30, bitrate=1800)
-    # anim.save(self.anim_path, fps=30, extra_args=['-vcodec', 'libx264'])
-    anim.save(path, writer=writer)
+    anim.save(path+'anim.mp4', writer=writer)

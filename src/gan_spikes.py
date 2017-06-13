@@ -13,6 +13,7 @@ import numpy as np
 import seaborn as sns
 import tensorflow as tf
 import plotting as plots
+import quantities as pq
 
 from scipy.stats import norm, poisson
 from six.moves import range
@@ -169,10 +170,10 @@ def _momentum_optimizer(loss, var_list, initial_learning_rate):
 
 
 class GAN(object):
-    def __init__(self, data, gen, num_steps, batch_size, minibatch, log_every,
-                 hidden_size=4, learning_rate=0.03, anim_path="./"):
+    def __init__(self, data_distribution, gen, num_steps, batch_size, minibatch,
+                 hidden_size=4, learning_rate=0.03, **kwargs):
         """
-        :param data: tensor data, here a np.random.normal
+        :param data_distribution: class DataDistribution
         :param gen: tensor generator net
         :param num_steps: int
         :param batch_size: int
@@ -180,14 +181,18 @@ class GAN(object):
         :param log_every: int
         :param anim_path: string
         """
-        self.data = data
+        binned, _, _ = data_distribution.poisson_nonstat_sample(t_stop=10000 * pq.ms,
+                                                                num_bins=batch_size, # make num_bins 80
+                                                                num_sts=2 * num_steps)
+        self.data = binned.to_array()
         self.gen = gen
         self.num_steps = num_steps
+        self.pre_train_steps = kwargs['pre_train_steps']
         self.batch_size = batch_size
         self.minibatch = minibatch
-        self.log_every = log_every
+        self.log_every = kwargs['log_every']
         self.mlp_hidden_size = hidden_size
-        self.anim_path = anim_path
+        self.anim_path = kwargs['anim_path']
         self.anim_frames = []
         self.learning_rate = learning_rate
         self.loss_d_plot = []
@@ -200,24 +205,24 @@ class GAN(object):
                 'minibatch active setting smaller learning rate of: {}'.format(
                     self.learning_rate))
 
-        self._create_model()
+        self._create_model(tensor_size=(self.batch_size, 1))
 
-    def _create_model(self):
+    def _create_model(self, tensor_size):
         """
         Creates the model
          
         Does the pre-training and optimization steps, creates also the 
-        Generative and Discriminator Network.  
+        Generative and Discriminator Network.
+
+        :param tensor_size: tuple defines the size of the tensor
         
         """
         # TODO in optimizing steps try MomentumOptimizer
 
         # Define the pre training
         with tf.variable_scope('D_pre'):
-            self.pre_input = tf.placeholder(tf.float32,
-                                            shape=(self.batch_size, 1))
-            self.pre_labels = tf.placeholder(tf.float32,
-                                             shape=(self.batch_size, 1))
+            self.pre_input = tf.placeholder(tf.float32, shape=tensor_size)
+            self.pre_labels = tf.placeholder(tf.float32, shape=tensor_size)
             D_pre = discriminator(self.pre_input, self.mlp_hidden_size,
                                   self.minibatch)
             self.pre_loss = tf.reduce_mean(tf.square(D_pre - self.pre_labels))
@@ -226,7 +231,7 @@ class GAN(object):
         # This defines the generator network - it takes samples from a
         # noise distribution as input, and passes them through an MLP.
         with tf.variable_scope('Gen'):
-            self.z = tf.placeholder(tf.float32, shape=(self.batch_size, 1))
+            self.z = tf.placeholder(tf.float32, shape=tensor_size)
             self.G = generator(self.z, self.mlp_hidden_size)
 
         # The discriminator tries to tell the difference between samples from
@@ -237,7 +242,7 @@ class GAN(object):
         # (that share parameters), as you cannot use the same network with
         # different inputs in TensorFlow.
         with tf.variable_scope('Disc') as scope:
-            self.x = tf.placeholder(tf.float32, shape=(self.batch_size, 1))
+            self.x = tf.placeholder(tf.float32, shape=tensor_size)
             self.D1 = discriminator(self.x, self.mlp_hidden_size,
                                     self.minibatch)
             # make a copy of D using same variables, but with G as input
@@ -266,22 +271,19 @@ class GAN(object):
         and alternates between optimizing the parameters of the discriminator
         and the generator.
         """
+        tensor_size = (self.batch_size, 1)
         with tf.Session() as session:
             tf.global_variables_initializer().run()
 
             # pretraining discriminator
-            num_pretrain_steps = 1000
-            for step in range(num_pretrain_steps):
-                # TODO : change pre trainer, e.g. random mu?
+            for step in range(self.pre_train_steps):
                 # d = (np.random.random(self.batch_size) - 0.5) * 10.0
-                # (b-a) * random_dist + a
-                d = self.gen.upper_range - self.gen.lower_range * np.random.random(
-                    self.batch_size) + self.gen.lower_range
+                d = self.data[self.pre_train_steps + step]
                 # labels = norm.pdf(d, loc=self.data.mu, scale=self.data.sigma)
-                labels = poisson.pmf(d, 10)
+                labels = self.data[step]
                 pretrain_loss, _ = session.run([self.pre_loss, self.pre_opt], {
-                    self.pre_input: np.reshape(d, (self.batch_size, 1)),
-                    self.pre_labels: np.reshape(labels, (self.batch_size, 1))
+                    self.pre_input: np.reshape(d, tensor_size),
+                    self.pre_labels: np.reshape(labels, tensor_size)
                 })
             self.weightsD = session.run(self.d_pre_params)
             tf.summary.histogram('weightsD', self.weightsD[0])
@@ -293,17 +295,17 @@ class GAN(object):
 
             for step in range(self.num_steps):
                 # update discriminator
-                x = self.data.poisson_sample(self.batch_size)
-                z = self.gen.sample(self.batch_size)
+                x = np.sort(self.data[self.num_steps + step])
+                z = self.gen.sample_int(tensor_size[0])
                 loss_d, _ = session.run([self.loss_d, self.opt_d], {
-                    self.x: np.reshape(x, (self.batch_size, 1)),
-                    self.z: np.reshape(z, (self.batch_size, 1))
+                    self.x: np.reshape(x, tensor_size),
+                    self.z: np.reshape(z, tensor_size)
                 })
 
                 # update generator
-                z = self.gen.sample(self.batch_size)
+                z = self.gen.sample_int(tensor_size[0])
                 loss_g, _ = session.run([self.loss_g, self.opt_g], {
-                    self.z: np.reshape(z, (self.batch_size, 1))
+                    self.z: np.reshape(z, tensor_size)
                 })
 
                 self.loss_d_plot.append(loss_d)
@@ -319,6 +321,7 @@ class GAN(object):
                                                           D1=self.D1,
                                                           G=self.G,
                                                           x=self.x,
+                                                          data=self.data,
                                                           z=self.z))
 
             if self.anim_path:
@@ -333,7 +336,8 @@ class GAN(object):
                                          D1=self.D1,
                                          G=self.G,
                                          x=self.x,
-                                         z=self.z)
+                                         z=self.z,
+                                         data=self.data)
                 plots.plot_training_loss(self.loss_g_plot, self.loss_d_plot)
             merged = tf.summary.merge_all()
             writer = tf.summary.FileWriter('logs', session.graph)
@@ -345,6 +349,7 @@ def main(**kwargs):
                 GeneratorDistribution(kwargs['lower_range'],
                                       kwargs['upper_range']),
                 num_steps=kwargs['num_steps'],
+                pre_train_steps=kwargs['pre_train_steps'],
                 batch_size=kwargs['batch_size'],
                 minibatch=kwargs['minibatch'],
                 log_every=kwargs['log_every'],
@@ -369,12 +374,14 @@ def parse_args():
 
 if __name__ == '__main__':
     num_steps = 2000
-    batch_size = 12
+    pre_train_steps = 1000
+    batch_size = 80
     minibatch = False
     lower_range = 0
     upper_range = 20
     log_every = 100
     anim_path = ""
-    main(num_steps=num_steps, batch_size=batch_size, minibatch=minibatch,
+    main(num_steps=num_steps, pre_train_steps=pre_train_steps,
+         batch_size=batch_size, minibatch=minibatch,
          lower_range=lower_range, upper_range=upper_range,
          log_every=log_every, anim_path=anim_path)
