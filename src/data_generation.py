@@ -84,20 +84,29 @@ class DataDistribution(object):
 
     @staticmethod
     def poisson_nonstat_sample(rate1=5 * Hz, rate2=10 * Hz, dt=1 * ms,
-                               t0=1000 * ms, binned=True, num_bins=100):
+                               t_stop=1000 * ms, binned=True, num_bins=100, num_sts=1):
         """
-        Returns a non-stationary poisson process with step rate given by 
+        Returns a non-stationary poisson process with step rate given by
         `rate1` and `rate2`
+
+        :param rate1: pq.Quantity First rate, e.g. in Hz
+        :param rate2: pq.Quantity Second rate, e.g. in Hz
+        :param dt: pq.Quantity Sampling period
+        :param t_stop: pq.Quantity End time of the first spike train
+        :param binned: bool If the spike trains should be binned
+        :param num_bins: int Number of bins
+        :param num_sts: int Number of spike trains
+        :return: binned spiketrains, corresponding spikes, and the rate signal
         """
-        t1 = 2 * t0
-        rate_profile = [rate1 for _ in range(t0 / dt)] + [rate2 for _ in range(
-            (t1 - t0) / dt)]
+        t1 = 2 * t_stop
+        rate_profile = [rate1 for _ in range(t_stop / dt)] + [rate2 for _ in range(
+            (t1 - t_stop) / dt)]
         rate_signal = neo.AnalogSignal(signal=rate_profile, units=Hz,
-                                       sampling_rate=1 * Hz)
-        spikes = poisson_nonstat(rate_signal)
+                                       sampling_period=dt)
+        spikes = poisson_nonstat(rate_signal, N=num_sts)
         if binned:
             binned_sts = BinnedSpikeTrain(spikes, num_bins=num_bins)
-            return binned_sts
+            return binned_sts, spikes, rate_signal
         return spikes
 
 
