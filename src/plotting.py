@@ -11,6 +11,7 @@ cmap = sns.husl_palette(10, l=.4)
 
 
 class PlotDistribution(object):
+
     def __init__(self, data):
         self.data = data
 
@@ -36,9 +37,9 @@ def plot_distributions(session, save=False, **kwargs):
     ax.plot(db_x, db, label='decision boundary')
     ax.set_ylim(0, 1)
     # plt.plot(p_x, pd, label='real data')
-    sns.distplot(p_d,  bins=20, label='real data', hist=True, kde=True,
+    sns.distplot(p_d, label='real data', hist=True, kde=True,
                  rug=False)
-    sns.distplot(p_g,  bins=10, label='generated data', hist=True, kde=True,
+    sns.distplot(p_g, bins=20, label='generated data', hist=True, kde=True,
                  rug=False)
     # plt.plot(p_x, pg, label='generated data')
     plt.title('1D Generative Adversarial Network')
@@ -78,7 +79,7 @@ def samples(session, num_points=10000, num_bins=100, **kwargs):
         })
 
     # data distribution
-    idx = np.random.randint(low=low_range, high=up_range)
+    idx = np.random.randint(low=low_range, high=len(data))
     d = data[idx]
     # d = np.mean(data, axis=0)
     # pd, _ = np.histogram(d, bins=bins, density=True)
@@ -163,4 +164,4 @@ def save_animation(path, anim_frames, **kwargs):
     )
     Writer = animation.writers['ffmpeg']
     writer = Writer(fps=30, bitrate=1800)
-    anim.save(path+'anim.mp4', writer=writer)
+    anim.save(path + 'anim.mp4', writer=writer)
