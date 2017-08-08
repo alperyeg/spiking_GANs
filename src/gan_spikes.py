@@ -17,6 +17,7 @@ import quantities as pq
 
 from scipy.stats import norm, poisson
 from six.moves import range
+import ops
 from data_generation import DataDistribution, GeneratorDistribution
 
 sns.set(color_codes=True)
@@ -28,31 +29,12 @@ np.random.seed(seed)
 tf.set_random_seed(seed)
 
 
-def linear(inpt, output_dim, scope=None, stddev=1.0):
-    """
-   Linear transformation
-
-    :param inpt: data
-    :param output_dim: hidden layers
-    :param scope: name
-    :param stddev: standard deviation
-    :return: tensor of type input
-    """
-    normal = tf.random_normal_initializer(stddev=stddev)
-    const = tf.constant_initializer(0.0)
-    with tf.variable_scope(scope or 'linear'):
-        w = tf.get_variable('w', [inpt.get_shape()[1], output_dim],
-                            initializer=normal)
-        b = tf.get_variable('b', [output_dim], initializer=const)
-        return tf.matmul(inpt, w) + b
-
-
 # The generator and discriminator networks are quite simple.
 # The generator is a linear transformation passed through a non-linearity
 # (a softplus function), followed by another linear transformation.
 def generator(inpt, h_dim):
-    h0 = tf.nn.softplus(linear(inpt, h_dim, 'g0'))
-    h1 = linear(h0, 1, 'g1')
+    h0 = tf.nn.softplus(ops.linear(inpt, h_dim, 'g0'))
+    h1 = ops.linear(h0, 1, 'g1')
     return h1
 
 
@@ -63,17 +45,17 @@ def generator(inpt, h_dim):
 # It uses tanh nonlinearities in all layers except the final one, which is
 # a sigmoid (the output of which is interpreted as a probability).
 def discriminator(inpt, h_dim, minibatch_layer=True):
-    h0 = tf.tanh(linear(inpt, h_dim * 2, scope='d0'))
-    h1 = tf.tanh(linear(h0, h_dim * 2, scope='d1'))
+    h0 = tf.tanh(ops.linear(inpt, h_dim * 2, scope='d0'))
+    h1 = tf.tanh(ops.linear(h0, h_dim * 2, scope='d1'))
 
     # without the minibatch layer, the discriminator needs an additional layer
     # to have enough capacity to separate the two distributions correctly
     if minibatch_layer:
         h2 = run_minibatch(h1)
     else:
-        h2 = tf.tanh(linear(h1, h_dim * 2, scope='d2'))
+        h2 = tf.tanh(ops.linear(h1, h_dim * 2, scope='d2'))
 
-    h3 = tf.sigmoid(linear(h2, 1, scope='d3'))
+    h3 = tf.sigmoid(ops.linear(h2, 1, scope='d3'))
     return h3
 
 
@@ -89,15 +71,16 @@ def run_minibatch(inpt, num_kernels=5, kernel_dim=3):
     * Concatenate the original input to the minibatch layer (the output of 
     the previous discriminator layer) with the newly created minibatch 
     features, and pass this as input to the next layer of the discriminator.
-    
+
     :param inpt: 
     :param num_kernels: 
     :param kernel_dim: 
     :return: 
     """
-    x = linear(inpt, num_kernels * kernel_dim, scope='minibatch', stddev=0.02)
+    x = ops.linear(inpt, num_kernels * kernel_dim, scope='minibatch', stddev=0.02)
     activation = tf.reshape(x, (-1, num_kernels, kernel_dim))
-    diffs = tf.expand_dims(activation, axis=3) - tf.expand_dims(tf.transpose(activation, [1, 2, 0]), axis=0)
+    diffs = tf.expand_dims(activation, axis=3) - \
+        tf.expand_dims(tf.transpose(activation, [1, 2, 0]), axis=0)
     abs_diffs = tf.reduce_sum(tf.abs(diffs), axis=2)
     minibatch_features = tf.reduce_sum(tf.exp(-abs_diffs), axis=2)
     return tf.concat(values=[inpt, minibatch_features], axis=1)
@@ -106,7 +89,7 @@ def run_minibatch(inpt, num_kernels=5, kernel_dim=3):
 def optimizer(loss, var_list, initial_learning_rate, name='GradientDescent',
               **kwargs):
     """
-    
+
     :param loss:  tensor containing the value to minimize.
     :param var_list:  Optional list or tuple of Variable objects to update 
                       to minimize loss. 
@@ -149,7 +132,7 @@ def _gradient_descent_optimizer(loss, var_list, initial_learning_rate):
 def _momentum_optimizer(loss, var_list, initial_learning_rate):
     """
     Momentum Optimizer with exponential learning rate decay
-    
+
     """
     # Apply exponential decay to the learning rate; staircase to use integer
     #  division in a stepwise (=staircase) fashion
@@ -170,6 +153,7 @@ def _momentum_optimizer(loss, var_list, initial_learning_rate):
 
 
 class GAN(object):
+
     def __init__(self, data_distribution, gen, num_steps, batch_size, minibatch,
                  hidden_size=4, learning_rate=0.03, **kwargs):
         """
@@ -182,7 +166,7 @@ class GAN(object):
         :param anim_path: string
         """
         binned, _, _ = data_distribution.poisson_nonstat_sample(t_stop=10000 * pq.ms,
-                                                                num_bins=batch_size, # make num_bins 80
+                                                                num_bins=batch_size,  # make num_bins 80
                                                                 num_sts=2 * num_steps)
         self.data = binned.to_array()
         self.gen = gen
@@ -210,12 +194,12 @@ class GAN(object):
     def _create_model(self, tensor_size):
         """
         Creates the model
-         
+
         Does the pre-training and optimization steps, creates also the 
         Generative and Discriminator Network.
 
         :param tensor_size: tuple defines the size of the tensor
-        
+
         """
         # TODO in optimizing steps try MomentumOptimizer
 
