@@ -32,31 +32,76 @@ tf.set_random_seed(seed)
 # The generator and discriminator networks are quite simple.
 # The generator is a linear transformation passed through a non-linearity
 # (a softplus function), followed by another linear transformation.
-def generator(inpt, h_dim):
-    h0 = tf.nn.softplus(ops.linear(inpt, h_dim, 'g0'))
-    h1 = ops.linear(h0, 1, 'g1')
+def generator(inpt, h_dim, model='simple'):
+    if model == 'simple':
+        return _generator_simple(inpt, h_dim)
+    elif model == "dcgan":
+        return _generator_dcgan(inpt, h_dim)
+
+
+def _generator_simple(inpt, h_dim):
+    h0 = tf.nn.softplus(ops.linear(inpt, h_dim, 'g0_simple'))
+    h1 = ops.linear(h0, 1, 'g1_simple')
     return h1
+
+
+def _generator_dcgan(inpt, h_dim):
+    with tf.variable_scope('generator') as scope:
+        z, h0_w, h0_b = ops.linear(inpt, h_dim, scope='g0_dcgan', with_w=True)
 
 
 # Make sure that the discriminator is more powerful than the generator,
 # as otherwise it did not have sufficient capacity to learn to be able to
 # distinguish accurately between generated and real samples.
 # So make it a deeper neural network, with a larger number of dimensions.
-# It uses tanh nonlinearities in all layers except the final one, which is
-# a sigmoid (the output of which is interpreted as a probability).
-def discriminator(inpt, h_dim, minibatch_layer=True):
-    h0 = tf.tanh(ops.linear(inpt, h_dim * 2, scope='d0'))
-    h1 = tf.tanh(ops.linear(h0, h_dim * 2, scope='d1'))
+def discriminator(inpt, h_dim, minibatch_layer=True, model='MLP'):
+    if model == 'MLP':
+        return _discriminator_mlp(inpt, h_dim, minibatch_layer)
+    elif model == 'CONV':
+        return _discriminator_conv(inpt, h_dim, minibatch_layer)
+
+
+def _discriminator_mlp(inpt, h_dim, minibatch_layer=True):
+    """
+    Discriminator using Multi-layer perceptron
+
+    It uses tanh nonlinearities in all layers except the final one, which is
+    a sigmoid (the output of which is interpreted as a probability).
+
+    """
+    h0 = tf.tanh(ops.linear(inpt, h_dim * 2, scope='d0_mlp'))
+    h1 = tf.tanh(ops.linear(h0, h_dim * 2, scope='d1_mlp'))
 
     # without the minibatch layer, the discriminator needs an additional layer
     # to have enough capacity to separate the two distributions correctly
     if minibatch_layer:
         h2 = run_minibatch(h1)
     else:
-        h2 = tf.tanh(ops.linear(h1, h_dim * 2, scope='d2'))
+        h2 = tf.tanh(ops.linear(h1, h_dim * 2, scope='d2_mlp'))
 
-    h3 = tf.sigmoid(ops.linear(h2, 1, scope='d3'))
+    h3 = tf.sigmoid(ops.linear(h2, 1, scope='d3_mlp'))
     return h3
+
+
+def _discriminator_conv(inpt, h_dim, minibatch_layer=True):
+    """
+    Discriminator using Convolutional Network
+
+    It uses leaky rectifier units in all layers except the final one, which is
+    a sigmoid (the output of which is interpreted as a probability).
+
+
+    """
+    # TODO add batch normalization
+    # h1 = lrelu(self.d_bns[0](conv2d(h0, self.df_dim*2, name='d_h1_conv'),
+    # self.is_training))
+    h0 = ops.lrelu(ops.conv2d(inpt, h_dim, scope='d0_conv'))
+    h1 = ops.lrelu(ops.conv2d(h0, h_dim * 2, scope='d1_conv'))
+    h2 = ops.lrelu(ops.conv2d(h1, h_dim * 4, scope='d2_conv'))
+    h3 = ops.lrelu(ops.linear(h2, h_dim * 8, scope='d3_conv'))
+    # h3 = ops.lrelu(ops.conv2d(h2, h_dim * 8, scope='d_h3_conv'))
+    # h4 = ops.linear(tf.reshape(h3, [-1, 8192]), 1, 'd_h4_lin')
+    return tf.nn.sigmoid(h3), h3
 
 
 def run_minibatch(inpt, num_kernels=5, kernel_dim=3):
@@ -77,7 +122,8 @@ def run_minibatch(inpt, num_kernels=5, kernel_dim=3):
     :param kernel_dim: 
     :return: 
     """
-    x = ops.linear(inpt, num_kernels * kernel_dim, scope='minibatch', stddev=0.02)
+    x = ops.linear(inpt, num_kernels * kernel_dim, scope='minibatch',
+                   stddev=0.02)
     activation = tf.reshape(x, (-1, num_kernels, kernel_dim))
     diffs = tf.expand_dims(activation, axis=3) - \
         tf.expand_dims(tf.transpose(activation, [1, 2, 0]), axis=0)
@@ -103,6 +149,8 @@ def optimizer(loss, var_list, initial_learning_rate, name='GradientDescent',
                                            initial_learning_rate)
     elif name == 'MomentumOptimizer':
         return _momentum_optimizer(loss, var_list, initial_learning_rate)
+    elif name == 'AdamOptimizer':
+        return _adam_optimizer(loss, var_list, initial_learning_rate)
 
 
 def _gradient_descent_optimizer(loss, var_list, initial_learning_rate):
@@ -152,16 +200,38 @@ def _momentum_optimizer(loss, var_list, initial_learning_rate):
     return optimizer_
 
 
+def _adam_optimizer(loss, var_list, initial_learning_rate):
+    # TODO check if correct
+    decay = 0.95
+    beta1 = 0.5
+    num_decay_steps = 150
+    batch = tf.Variable(0)
+    # TODO check learning rate, otherwise start with 0.0002
+    learning_rate = tf.train.exponential_decay(
+        initial_learning_rate,
+        batch,
+        num_decay_steps,
+        decay,
+        staircase=True)
+    optimizer_ = tf.train.AdamOptimizer(learning_rate=learning_rate, beta1=beta1).minimize(loss,
+                                                                                           global_step=batch,
+                                                                                           var_list=var_list)
+    return optimizer_
+
+
 class GAN(object):
 
     def __init__(self, data_distribution, gen, num_steps, batch_size, minibatch,
-                 hidden_size=4, learning_rate=0.03, **kwargs):
+                 hidden_size=4, learning_rate=0.03,
+                 z_dim=100, gf_dim=64, df_dim=64,
+                 gfc_dim=1024, dfc_dim=1024,
+                 **kwargs):
         """
         :param data_distribution: class DataDistribution
         :param gen: tensor generator net
         :param num_steps: int
         :param batch_size: int
-        :param minibatch: bool 
+        :param minibatch: bool
         :param log_every: int
         :param anim_path: string
         """
@@ -175,12 +245,29 @@ class GAN(object):
         self.batch_size = batch_size
         self.minibatch = minibatch
         self.log_every = kwargs['log_every']
-        self.mlp_hidden_size = hidden_size
+        self.hidden_size = hidden_size
         self.anim_path = kwargs['anim_path']
         self.anim_frames = []
         self.learning_rate = learning_rate
         self.loss_d_plot = []
         self.loss_g_plot = []
+
+        self.z_dim = z_dim
+
+        self.gf_dim = gf_dim
+        self.df_dim = df_dim
+
+        self.gfc_dim = gfc_dim
+        self.dfc_dim = dfc_dim
+
+        # batch normalization : deals with poor initialization
+        # helps gradient flow
+        self.d_bns = [
+            ops.BatchNorm(name='d_bn{}'.format(i, )) for i in range(4)]
+        self.checkpoint_dir = kwargs['checkpoint_dir']
+
+        self.g_bns = [
+            ops.BatchNorm(name='g_bn{}'.format(i,)) for i in range(64)]
 
         # can use a higher learning rate when not using the minibatch layer
         if self.minibatch:
@@ -195,7 +282,7 @@ class GAN(object):
         """
         Creates the model
 
-        Does the pre-training and optimization steps, creates also the 
+        Does the pre-training and optimization steps, creates also the
         Generative and Discriminator Network.
 
         :param tensor_size: tuple defines the size of the tensor
@@ -207,8 +294,8 @@ class GAN(object):
         with tf.variable_scope('D_pre'):
             self.pre_input = tf.placeholder(tf.float32, shape=tensor_size)
             self.pre_labels = tf.placeholder(tf.float32, shape=tensor_size)
-            D_pre = discriminator(self.pre_input, self.mlp_hidden_size,
-                                  self.minibatch)
+            D_pre = discriminator(self.pre_input, self.hidden_size,
+                                  self.minibatch, model='MLP')
             self.pre_loss = tf.reduce_mean(tf.square(D_pre - self.pre_labels))
             self.pre_opt = optimizer(self.pre_loss, None, self.learning_rate)
 
@@ -216,7 +303,7 @@ class GAN(object):
         # noise distribution as input, and passes them through an MLP.
         with tf.variable_scope('Gen'):
             self.z = tf.placeholder(tf.float32, shape=tensor_size)
-            self.G = generator(self.z, self.mlp_hidden_size)
+            self.G = generator(self.z, self.hidden_size, model='simple')
 
         # The discriminator tries to tell the difference between samples from
         # the true data distribution (self.x) and the generated
@@ -227,11 +314,11 @@ class GAN(object):
         # different inputs in TensorFlow.
         with tf.variable_scope('Disc') as scope:
             self.x = tf.placeholder(tf.float32, shape=tensor_size)
-            self.D1 = discriminator(self.x, self.mlp_hidden_size,
+            self.D1 = discriminator(self.x, self.hidden_size,
                                     self.minibatch)
             # make a copy of D using same variables, but with G as input
             scope.reuse_variables()
-            self.D2 = discriminator(self.G, self.mlp_hidden_size,
+            self.D2 = discriminator(self.G, self.hidden_size,
                                     self.minibatch)
 
         # Define the loss for discriminator and generator networks
@@ -337,7 +424,8 @@ def main(**kwargs):
                 batch_size=kwargs['batch_size'],
                 minibatch=kwargs['minibatch'],
                 log_every=kwargs['log_every'],
-                anim_path=kwargs['anim_path']
+                anim_path=kwargs['anim_path'],
+                checkpoint_dir=kwargs['checkpoint_dir']
                 )
     model.train()
 
@@ -356,16 +444,19 @@ def parse_args():
                         help='name of the output animation file (default: none)')
     return parser.parse_args()
 
+
 if __name__ == '__main__':
     num_steps = 2000
     pre_train_steps = 1000
-    batch_size = 80
+    batch_size = 80     # size of input
     minibatch = False
     lower_range = 0
     upper_range = 20
     log_every = 100
     anim_path = ""
+    checkpoint_dir = "./"
     main(num_steps=num_steps, pre_train_steps=pre_train_steps,
          batch_size=batch_size, minibatch=minibatch,
          lower_range=lower_range, upper_range=upper_range,
-         log_every=log_every, anim_path=anim_path)
+         log_every=log_every, anim_path=anim_path,
+         checkpoint_dir=checkpoint_dir)

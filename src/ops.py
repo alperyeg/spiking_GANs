@@ -23,7 +23,7 @@ class BatchNorm(object):
                                             is_training=train, scope=self.name)
 
 
-def linear(inpt, output_dim, scope=None, stddev=1.0):
+def linear(inpt, output_dim, scope=None, stddev=1.0, with_w=False):
     """
     Linear transformation
 
@@ -31,6 +31,7 @@ def linear(inpt, output_dim, scope=None, stddev=1.0):
     :param output_dim: hidden layers
     :param scope: name
     :param stddev: standard deviation
+    :param with_w: whether weights and bias should be returned
     :return: tensor of type input
     """
     normal = tf.random_normal_initializer(stddev=stddev)
@@ -39,7 +40,10 @@ def linear(inpt, output_dim, scope=None, stddev=1.0):
         w = tf.get_variable('w', [inpt.get_shape()[1], output_dim],
                             initializer=normal)
         b = tf.get_variable('b', [output_dim], initializer=const)
-        return tf.matmul(inpt, w) + b
+        if with_w:
+            return tf.matmul(inpt, w) + b, w, b
+        else:
+            return tf.matmul(inpt, w) + b
 
 
 def lrelu(x, leak=0.2, scope="lrelu"):
@@ -109,6 +113,19 @@ def conv2d(inpt, output_dim, k_h=5, k_w=5, d_h=2, d_w=2, stddev=0.2,
 
 def conv2d_transpose(inpt, output_dim, k_h=5, k_w=5, d_h=2, d_w=2, stddev=0.2,
                      scope=None, with_w=False):
+    """
+    Convolution done for one trial with several spike trains
+    :param inpt:
+    :param output_dim:
+    :param k_h:
+    :param k_w:
+    :param d_h:
+    :param d_w:
+    :param stddev:
+    :param scope:
+    :param with_w:
+    :return:
+    """
     initializer = tf.random_normal_initializer(stddev=stddev)
     const = tf.constant_initializer(0.0)
     with tf.variable_scope(scope or 'conv2d_transpose'):
