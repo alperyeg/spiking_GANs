@@ -103,3 +103,5 @@ ENV/
 # Repository specific
 logs/
 *.png
+src/samples/
+src/checkpoints/

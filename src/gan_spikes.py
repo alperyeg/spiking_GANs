@@ -9,21 +9,23 @@ from __future__ import unicode_literals
 from __future__ import division
 
 import argparse
+import datetime
 import numpy as np
 import seaborn as sns
 import tensorflow as tf
 import plotting as plots
 import quantities as pq
 
+import ops
+
 from scipy.stats import norm, poisson
 from six.moves import range
-import ops
+from utils import save, save_samples, load
 from data_generation import DataDistribution, GeneratorDistribution
 
 sns.set(color_codes=True)
 
-# TODO proper tf.summary
-# TODO save model as a checkpoint
+# TODO add loading of checkpoint if they exists in train()
 
 seed = 123
 np.random.seed(seed)
@@ -314,12 +316,15 @@ class GAN(object):
         self.learning_rate = learning_rate
         self.loss_d_plot = []
         self.loss_g_plot = []
-        self.training_run = kwargs['training_run']
-
-        self.z_dim = z_dim
+        # self.training_run = kwargs['training_run']
+        self.is_training = tf.placeholder(tf.bool, name='is_training')
 
         self.gf_dim = gf_dim
         self.df_dim = df_dim
+        self.z_dim = z_dim
+
+        self.checkpoint_dir = kwargs['checkpoint_dir']
+        self.samples_dir = kwargs['samples_dir']
 
         # can use a higher learning rate when not using the minibatch layer
         if self.minibatch:
@@ -327,7 +332,6 @@ class GAN(object):
             print(
                 'minibatch active setting smaller learning rate of: {}'.format(
                     self.learning_rate))
-        # TODO change tensor size to actual input size
         self._create_model()
 
     def _create_model(self):
@@ -345,8 +349,9 @@ class GAN(object):
             self.pre_input = tf.placeholder(tf.float32, shape=self.input_shape)
             # self.pre_labels = tf.placeholder(tf.float32, shape=tensor_size)
             pre_labels = tf.ones(shape=self.input_shape)
-            D_pre = discriminator(self.pre_input, self.hidden_size, self.df_dim,
-                                  self.batch_size, self.minibatch, model='MLP')
+            D_pre, _ = discriminator(self.pre_input, self.hidden_size,
+                                     self.df_dim,
+                                     self.batch_size, self.minibatch, model='MLP')
             self.pre_loss = tf.reduce_mean(tf.square(D_pre - pre_labels))
             self.pre_opt = optimizer(self.pre_loss, None, self.learning_rate)
 
@@ -354,8 +359,9 @@ class GAN(object):
         # noise distribution as input, and passes them through an MLP.
         with tf.variable_scope('Generator'):
             self.z = tf.placeholder(tf.float32, shape=self.input_shape)
+            self.z_sum = tf.summary.histogram("z", self.z)
             self.G = generator(self.z, self.hidden_size, self.gf_dim,
-                               is_training=self.training_run, model='simple')
+                               is_training=self.is_training, model='simple')
 
         # The discriminator tries to tell the difference between samples from
         # the true data distribution (self.x) and the generated
@@ -380,7 +386,7 @@ class GAN(object):
         # and create optimizers for both
         # self.loss_d = tf.reduce_mean(-tf.log(self.D1) - tf.log(1 - self.D2))
         # self.loss_g = tf.reduce_mean(-tf.log(self.D2))
-        self.d_loss_real = tf.reduce_mean(
+        self.loss_d_real = tf.reduce_mean(
             tf.nn.sigmoid_cross_entropy_with_logits(logits=self.D1_logits,
                                                     labels=tf.ones_like(self.D1)))
         self.loss_d_fake = tf.reduce_mean(
@@ -391,7 +397,7 @@ class GAN(object):
             tf.nn.sigmoid_cross_entropy_with_logits(logits=self.D2_logits,
                                                     labels=tf.ones_like(self.D2)))
 
-        self.loss_d = self.d_loss_real + self.loss_d_fake
+        self.loss_d = self.loss_d_real + self.loss_d_fake
 
         self.d_pre_params = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES,
                                               scope='D_pre')
@@ -403,13 +409,25 @@ class GAN(object):
         self.opt_d = optimizer(self.loss_d, self.d_params, self.learning_rate)
         self.opt_g = optimizer(self.loss_g, self.g_params, self.learning_rate)
 
+        self.d1_sum = tf.summary.histogram("d", self.D1)
+        self.d2_sum = tf.summary.histogram("d", self.D2)
+        self.G_sum = tf.summary.histogram("G", self.G)
+        self.loss_d_real_sum = tf.summary.scalar("d_loss_real",
+                                                 self.loss_d_real)
+        self.loss_d_fake_sum = tf.summary.scalar("d_loss_fake",
+                                                 self.loss_d_fake)
+        self.loss_g_sum = tf.summary.scalar("g_loss", self.loss_g)
+        self.loss_d_sum = tf.summary.scalar("d_loss", self.loss_d)
+        self.saver = tf.train.Saver(max_to_keep=1)
+
     def train(self):
         """
         Draws samples from the data distribution and the noise distribution,
         and alternates between optimizing the parameters of the discriminator
         and the generator.
         """
-        tensor_size = self.input_shape
+        # TODO add loop over epochs and batches instead single iterations
+        tensor_shape = self.input_shape
         with tf.Session() as session:
             tf.global_variables_initializer().run()
 
@@ -422,35 +440,69 @@ class GAN(object):
                     # labels = self.data[step]
                     pretrain_loss, _ = session.run(
                         [self.pre_loss, self.pre_opt], {
-                            self.pre_input: np.reshape(d, tensor_size)
+                            self.pre_input: np.reshape(d, tensor_shape)
                         })
                 self.weightsD = session.run(self.d_pre_params)
-                tf.summary.histogram('weightsD', self.weightsD[0])
 
                 # copy weights from pre-training over to new D network
                 for i, v in enumerate(self.d_params):
                     session.run(tf.assign(v, self.weightsD[i]))
                     # session.run(v.assign(self.weightsD[i]))
+            writer = tf.summary.FileWriter("./logs", session.graph)
+
+            g_sum = tf.summary.merge(
+                [self.z_sum, self.d2_sum, self.G_sum, self.loss_d_fake_sum,
+                 self.loss_g_sum])
+            d_sum = tf.summary.merge(
+                [self.z_sum, self.d1_sum, self.loss_d_real_sum,
+                 self.loss_d_sum])
 
             for step in range(self.num_steps):
                 # update discriminator
                 x = np.sort(self.data[self.num_steps + step])
-                z = self.gen.sample_int(tensor_size[0])
-                loss_d, _ = session.run([self.loss_d, self.opt_d], {
-                    self.x: np.reshape(x, tensor_size),
-                    self.z: np.reshape(z, tensor_size)
-                })
+                z = self.gen.sample_int(tensor_shape[0])
+                loss_d, summary, _ = session.run(
+                    [self.loss_d, d_sum, self.opt_d],
+                    {
+                     self.x: np.reshape(x, tensor_shape),
+                     self.z: np.reshape(z, tensor_shape),
+                     self.is_training: True
+                    })
+                writer.add_summary(summary, step)
 
                 # update generator
-                z = self.gen.sample_int(tensor_size[0])
-                loss_g, _ = session.run([self.loss_g, self.opt_g], {
-                    self.z: np.reshape(z, tensor_size)
-                })
+                z = self.gen.sample_int(tensor_shape[0])
+                loss_g, summary, _ = session.run(
+                    [self.loss_g, g_sum, self.opt_g],
+                    {
+                     self.z: np.reshape(z, tensor_shape),
+                     self.is_training: True
+                    })
+                writer.add_summary(summary, step)
+
+                errD_fake = self.loss_d_fake.eval(
+                    {self.z: z.reshape(input_shape), self.is_training: False})
+                errD_real = self.loss_d_real.eval(
+                    {self.x: x.reshape(tensor_shape), self.is_training: False})
+                errG = self.loss_g.eval(
+                    {self.z: z.reshape(tensor_shape), self.is_training: False})
+                # print('loss_d {}, errD_real {}'.format(loss_d, errD_real + errD_fake))
+                # print('loss_g {}, errG {}'.format(loss_g, errG))
 
                 self.loss_d_plot.append(loss_d)
                 self.loss_g_plot.append(loss_g)
                 if step % self.log_every == 0:
-                    print('{}: {}\t{}'.format(step, loss_d, loss_g))
+                    # print('{}: loss_d: {}\t loss_g: {}'.format(step, loss_d,
+                    #                                            loss_g))
+                    samples, d_loss, g_loss = session.run(
+                        [self.G, self.loss_d, self.loss_g],
+                        feed_dict={self.z: z.reshape(tensor_shape),
+                                   self.x: x.reshape(tensor_shape),
+                                   self.is_training: False}
+                    )
+                    now = datetime.datetime.now().isoformat()
+                    save_samples(samples, self.samples_dir,
+                              'train_{}_{}.npy'.format(step, now))
 
                 if self.anim_path:
                     self.anim_frames.append(plots.samples(session, save=False,
@@ -462,6 +514,10 @@ class GAN(object):
                                                           x=self.x,
                                                           data=self.data,
                                                           z=self.z))
+
+                if (step % 500) == 0:
+                    save(self.checkpoint_dir, step, self.saver, session,
+                         'GAN.model')
 
             if self.anim_path:
                 plots.save_animation(self.anim_path, self.anim_frames,
@@ -478,8 +534,9 @@ class GAN(object):
                                          z=self.z,
                                          data=self.data)
                 plots.plot_training_loss(self.loss_g_plot, self.loss_d_plot)
-            merged = tf.summary.merge_all()
-            writer = tf.summary.FileWriter('logs', session.graph)
+
+            # merged = tf.summary.merge_all()
+            # writer = tf.summary.FileWriter('logs', session.graph)
             writer.close()
 
 
@@ -496,6 +553,7 @@ def main(**kwargs):
                 log_every=kwargs['log_every'],
                 anim_path=kwargs['anim_path'],
                 checkpoint_dir=kwargs['checkpoint_dir'],
+                samples_dir=kwargs["samples_dir"],
                 training_run=kwargs['training_run']
                 )
     model.train()
@@ -528,11 +586,12 @@ if __name__ == '__main__':
     log_every = 100
     training_run = True
     anim_path = ""
-    checkpoint_dir = "./"
+    checkpoint_dir = "checkpoints"
+    samples_dir = "samples"
     # TODO make a parameter dictionary for convenience
     main(num_steps=num_steps,
          pre_train_steps=pre_train_steps, pre_train=pre_train,
          batch_size=batch_size, input_shape=input_shape, minibatch=minibatch,
          lower_range=lower_range, upper_range=upper_range,
          log_every=log_every, anim_path=anim_path, training_run=training_run,
-         checkpoint_dir=checkpoint_dir)
+         checkpoint_dir=checkpoint_dir, samples_dir=samples_dir)
