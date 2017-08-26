@@ -36,8 +36,9 @@ def linear(inpt, output_dim, scope=None, stddev=1.0, with_w=False):
     """
     normal = tf.random_normal_initializer(stddev=stddev)
     const = tf.constant_initializer(0.0)
+    shape = inpt.get_shape().as_list()
     with tf.variable_scope(scope or 'linear'):
-        w = tf.get_variable('w', [inpt.get_shape()[1], output_dim],
+        w = tf.get_variable('w', [shape[1], output_dim], tf.float32,
                             initializer=normal)
         b = tf.get_variable('b', [output_dim], initializer=const)
         if with_w:
@@ -102,7 +103,7 @@ def conv2d(inpt, output_dim, k_h=5, k_w=5, d_h=2, d_w=2, stddev=0.2,
     const = tf.constant_initializer(0.0)
     with tf.variable_scope(scope or 'conv2d'):
         # TODO give an own defined filter
-        w = tf.get_variable('w', [k_h, k_w, inpt.get_shape()[1], output_dim],
+        w = tf.get_variable('w', [k_h, k_w, inpt.get_shape()[-1], output_dim],
                             initializer=normal)
         conv = tf.nn.conv2d(inpt, w, strides=[1, d_h, d_w, 1], padding='SAME')
         b = tf.get_variable('b', [output_dim], initializer=const)
@@ -130,12 +131,12 @@ def conv2d_transpose(inpt, output_dim, k_h=5, k_w=5, d_h=2, d_w=2, stddev=0.2,
     const = tf.constant_initializer(0.0)
     with tf.variable_scope(scope or 'conv2d_transpose'):
         # filter : [height, width, output_channels, in_channels]
-        w = tf.get_variable('w', [k_h, k_w, output_dim[1],
-                                  inpt.get_shape()[1]],
+        w = tf.get_variable('w', [k_h, k_w, output_dim[-1],
+                                  inpt.get_shape()[-1]],
                             initializer=initializer)
         deconv = tf.nn.conv2d_transpose(inpt, w, output_shape=output_dim,
                                         strides=[1, d_h, d_w, 1])
-        biases = tf.get_variable('b', [output_dim[1]], initializer=const)
+        biases = tf.get_variable('b', [output_dim[-1]], initializer=const)
         # deconv = tf.reshape(tf.nn.bias_add(deconv, biases), deconv.get_shape())
         deconv = tf.nn.bias_add(deconv, biases)
         if with_w:

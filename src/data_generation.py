@@ -131,3 +131,15 @@ class GeneratorDistribution(object):
     def sample_int(self, n):
         return np.linspace(self.lower_range, self.upper_range, n) + \
                np.random.randint(-self.upper_range/2, self.upper_range/2, n)
+
+    def binned_samples(self, shape):
+        def samples(shape):
+            return np.linspace(self.lower_range, self.upper_range,
+                               shape[0]) + \
+                   np.random.randint(self.lower_range,
+                                     self.upper_range / 2, shape[1])
+
+        data = np.zeros(shape)
+        for i in range(shape[0]):
+            data[i] = np.histogram(samples(shape), bins=shape[1])[0]
+        return data

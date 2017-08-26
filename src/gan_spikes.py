@@ -26,6 +26,12 @@ from data_generation import DataDistribution, GeneratorDistribution
 sns.set(color_codes=True)
 
 # TODO add loading of checkpoint if they exists in train()
+# TODO clean up code, e.g.
+# - make some parameters visible/not hidden and optional
+# - comment code more
+# TODO add model selection in main routine
+# TODO add batch and epoch see generator and discriminator function
+# TODO limit generator to positive values (and integers?)
 
 seed = 123
 np.random.seed(seed)
@@ -49,7 +55,7 @@ def _generator_simple(inpt, h_dim):
 
 
 def _generator_dcgan(inpt, gf_dim, is_training):
-    with tf.variable_scope('generator'):
+    with tf.variable_scope('Generator'):
         z, h0_w, h0_b = ops.linear(inpt, gf_dim * 8 * 4 * 4, scope='g0_dcgan',
                                    with_w=True)
         hs = [None]
@@ -65,13 +71,13 @@ def _generator_dcgan(inpt, gf_dim, is_training):
                                           center=True, scale=True,
                                           is_training=is_training,
                                           scope='g_bn0')
-        hs[0] = tf.nn.relu(bn, is_training)
+        hs[0] = tf.nn.relu(bn)
 
         i = 1  # Iteration number.
         depth_mul = 8  # Depth decreases as spatial component increases.
         size = 8  # Size increases as depth decreases.
 
-        while size < len(inpt):
+        while size < gf_dim:
             hs.append(None)
             name = 'g{}_dcgan'.format(i)
             hs[i], _, _ = ops.conv2d_transpose(hs[i - 1],
@@ -85,7 +91,7 @@ def _generator_dcgan(inpt, gf_dim, is_training):
                                               is_training=is_training,
                                               scope='g_bn{}'.format(i))
 
-            hs[i] = tf.nn.relu(bn, is_training)
+            hs[i] = tf.nn.relu(bn)
             i += 1
             depth_mul //= 2
             size *= 2
@@ -146,7 +152,7 @@ def _discriminator_conv(inpt, df_dim, batch_size_, reuse=False):
 
 
     """
-    with tf.variable_scope('discriminator') as scope:
+    with tf.variable_scope('Discriminator') as scope:
         if reuse:
             scope.reuse_variables()
         # TODO add batch normalization
@@ -155,9 +161,9 @@ def _discriminator_conv(inpt, df_dim, batch_size_, reuse=False):
         h0 = ops.lrelu(ops.conv2d(inpt, df_dim, scope='d0_conv'))
         h1 = ops.lrelu(ops.conv2d(h0, df_dim * 2, scope='d1_conv'))
         h2 = ops.lrelu(ops.conv2d(h1, df_dim * 4, scope='d2_conv'))
-        h3 = ops.lrelu(ops.linear(h2, df_dim * 8, scope='d3_conv'))
-        # h4 = ops.linear(tf.reshape(h3, [-1, 8192]), 1, 'd_h4_lin')
-        h4 = ops.linear(tf.reshape(h3, [batch_size_, -1]), 1, 'd_h4_lin')
+        h3 = ops.lrelu(h2, df_dim * 8, scope='d3_conv')
+        h4 = ops.linear(tf.reshape(h3, [-1, 8192]), 1, 'd_h4_lin')
+        # h4 = ops.linear(tf.reshape(h3, [batch_size_, -1]), 1, scope='d4_conv')
         return tf.nn.sigmoid(h4), h4
 
 
@@ -299,10 +305,14 @@ class GAN(object):
         :param kwargs: additional parameters
         """
         self.input_shape = kwargs['input_shape']
-        binned, _, _ = data_distribution.poisson_nonstat_sample(t_stop=10000 * pq.ms,
-                                                                num_bins=self.input_shape[0],
-                                                                num_sts=2 * num_steps)
-        self.data = binned.to_array()
+        print('Generating data')
+        binned = [
+            data_distribution.poisson_nonstat_sample(t_stop=10000 * pq.ms,
+                                                     num_bins=self.input_shape[1],
+                                                     num_sts=self.input_shape[0])[0].to_array()
+            for _ in range(num_steps)]
+        print('Generating data done')
+        self.data = binned
         self.gen = gen
         self.num_steps = num_steps
         self.pre_train_steps = kwargs['pre_train_steps']
@@ -346,22 +356,26 @@ class GAN(object):
 
         # Define the pre training
         with tf.variable_scope('D_pre'):
-            self.pre_input = tf.placeholder(tf.float32, shape=self.input_shape)
-            # self.pre_labels = tf.placeholder(tf.float32, shape=tensor_size)
-            pre_labels = tf.ones(shape=self.input_shape)
-            D_pre, _ = discriminator(self.pre_input, self.hidden_size,
-                                     self.df_dim,
-                                     self.batch_size, self.minibatch, model='MLP')
-            self.pre_loss = tf.reduce_mean(tf.square(D_pre - pre_labels))
-            self.pre_opt = optimizer(self.pre_loss, None, self.learning_rate)
+            if self.pre_train:
+                self.pre_input = tf.placeholder(tf.float32,
+                                                shape=self.input_shape)
+                # self.pre_labels = tf.placeholder(tf.float32, shape=tensor_size)
+                pre_labels = tf.ones(shape=self.input_shape)
+                D_pre, _ = discriminator(self.pre_input, self.hidden_size,
+                                         self.df_dim,
+                                         self.batch_size, self.minibatch,
+                                         model='CONV')
+                self.pre_loss = tf.reduce_mean(tf.square(D_pre - pre_labels))
+                self.pre_opt = optimizer(self.pre_loss, None,
+                                         self.learning_rate)
 
         # This defines the generator network - it takes samples from a
         # noise distribution as input, and passes them through an MLP.
         with tf.variable_scope('Generator'):
-            self.z = tf.placeholder(tf.float32, shape=self.input_shape)
+            self.z = tf.placeholder(tf.float32, shape=self.input_shape, name='self.z')
             self.z_sum = tf.summary.histogram("z", self.z)
             self.G = generator(self.z, self.hidden_size, self.gf_dim,
-                               is_training=self.is_training, model='simple')
+                               is_training=self.is_training, model='dcgan')
 
         # The discriminator tries to tell the difference between samples from
         # the true data distribution (self.x) and the generated
@@ -371,16 +385,20 @@ class GAN(object):
         # (that share parameters), as you cannot use the same network with
         # different inputs in TensorFlow.
         # with tf.variable_scope('Disc') as scope:
-        self.x = tf.placeholder(tf.float32, shape=self.input_shape)
+        self.x = tf.placeholder(tf.float32,
+                                shape=[None] + list(self.input_shape) + [1],
+                                name='self.x')
         self.D1, self.D1_logits = discriminator(self.x, self.hidden_size,
                                                 self.df_dim,
                                                 self.batch_size,
-                                                self.minibatch, reuse=False)
+                                                self.minibatch, reuse=False,
+                                                model="CONV")
         # make a copy of D using same variables, but with G as input
         self.D2, self.D2_logits = discriminator(self.G, self.hidden_size,
                                                 self.df_dim,
                                                 self.batch_size,
-                                                self.minibatch, reuse=True)
+                                                self.minibatch, reuse=True,
+                                                model="CONV")
 
         # Define the loss for discriminator and generator networks
         # and create optimizers for both
@@ -406,12 +424,14 @@ class GAN(object):
         self.g_params = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES,
                                           scope='Generator')
 
-        self.opt_d = optimizer(self.loss_d, self.d_params, self.learning_rate)
-        self.opt_g = optimizer(self.loss_g, self.g_params, self.learning_rate)
+        self.opt_d = optimizer(self.loss_d, self.d_params, self.learning_rate,
+                               name='AdamOptimizer')
+        self.opt_g = optimizer(self.loss_g, self.g_params, self.learning_rate,
+                               name='AdamOptimizer')
 
-        self.d1_sum = tf.summary.histogram("d", self.D1)
-        self.d2_sum = tf.summary.histogram("d", self.D2)
-        self.G_sum = tf.summary.histogram("G", self.G)
+        self.d1_sum = tf.summary.histogram("D1", self.D1)
+        self.d2_sum = tf.summary.histogram("D2", self.D2)
+        self.G_sum = tf.summary.image("G", self.G)
         self.loss_d_real_sum = tf.summary.scalar("d_loss_real",
                                                  self.loss_d_real)
         self.loss_d_fake_sum = tf.summary.scalar("d_loss_fake",
@@ -427,7 +447,6 @@ class GAN(object):
         and the generator.
         """
         # TODO add loop over epochs and batches instead single iterations
-        tensor_shape = self.input_shape
         with tf.Session() as session:
             tf.global_variables_initializer().run()
 
@@ -440,7 +459,7 @@ class GAN(object):
                     # labels = self.data[step]
                     pretrain_loss, _ = session.run(
                         [self.pre_loss, self.pre_opt], {
-                            self.pre_input: np.reshape(d, tensor_shape)
+                            self.pre_input: np.reshape(d, self.input_shape)
                         })
                 self.weightsD = session.run(self.d_pre_params)
 
@@ -458,36 +477,41 @@ class GAN(object):
                  self.loss_d_sum])
 
             for step in range(self.num_steps):
+                print('iteration at step {}'.format(step))
                 # update discriminator
-                x = np.sort(self.data[self.num_steps + step])
-                z = self.gen.sample_int(tensor_shape[0])
+                # x = np.sort(self.data[self.num_steps + step])
+                x = self.data[step]
+                # TODO try different noise sources
+                # z = self.gen.sample_int(self.input_shape[0])
+                z = self.gen.binned_samples(self.input_shape)
                 loss_d, summary, _ = session.run(
                     [self.loss_d, d_sum, self.opt_d],
                     {
-                     self.x: np.reshape(x, tensor_shape),
-                     self.z: np.reshape(z, tensor_shape),
+                     self.x: x[np.newaxis, :, :, np.newaxis],
+                     self.z: z,
                      self.is_training: True
                     })
                 writer.add_summary(summary, step)
 
                 # update generator
-                z = self.gen.sample_int(tensor_shape[0])
+                # z = self.gen.sample_int(self.input_shape[0])
+                z = self.gen.binned_samples(self.input_shape)
                 loss_g, summary, _ = session.run(
                     [self.loss_g, g_sum, self.opt_g],
                     {
-                     self.z: np.reshape(z, tensor_shape),
+                     self.z: np.reshape(z, self.input_shape),
                      self.is_training: True
                     })
                 writer.add_summary(summary, step)
 
                 errD_fake = self.loss_d_fake.eval(
-                    {self.z: z.reshape(input_shape), self.is_training: False})
+                    {self.z: z, self.is_training: False})
                 errD_real = self.loss_d_real.eval(
-                    {self.x: x.reshape(tensor_shape), self.is_training: False})
+                    {self.x: x[np.newaxis, :, :, np.newaxis], self.is_training: False})
                 errG = self.loss_g.eval(
-                    {self.z: z.reshape(tensor_shape), self.is_training: False})
-                # print('loss_d {}, errD_real {}'.format(loss_d, errD_real + errD_fake))
-                # print('loss_g {}, errG {}'.format(loss_g, errG))
+                    {self.z: z, self.is_training: False})
+                print('loss_d {}, errD_real {}'.format(loss_d, errD_real + errD_fake))
+                print('loss_g {}, errG {}'.format(loss_g, errG))
 
                 self.loss_d_plot.append(loss_d)
                 self.loss_g_plot.append(loss_g)
@@ -496,8 +520,8 @@ class GAN(object):
                     #                                            loss_g))
                     samples, d_loss, g_loss = session.run(
                         [self.G, self.loss_d, self.loss_g],
-                        feed_dict={self.z: z.reshape(tensor_shape),
-                                   self.x: x.reshape(tensor_shape),
+                        feed_dict={self.z: z,
+                                   self.x: x[np.newaxis, :, :, np.newaxis],
                                    self.is_training: False}
                     )
                     now = datetime.datetime.now().isoformat()
@@ -524,16 +548,18 @@ class GAN(object):
                                      lower_range=self.gen.lower_range,
                                      upper_range=self.gen.upper_range)
             else:
-                plots.plot_distributions(session, save=False,
-                                         lower_range=self.gen.lower_range,
-                                         upper_range=self.gen.upper_range,
-                                         batch_size=self.input_shape[0],
-                                         D1=self.D1,
-                                         G=self.G,
-                                         x=self.x,
-                                         z=self.z,
-                                         data=self.data)
-                plots.plot_training_loss(self.loss_g_plot, self.loss_d_plot)
+                # TODO find a proper plotting mechanism
+                pass
+                # plots.plot_distributions(session, save=False,
+                #                          lower_range=self.gen.lower_range,
+                #                          upper_range=self.gen.upper_range,
+                #                          batch_size=self.input_shape[0],
+                #                          D1=self.D1,
+                #                          G=self.G,
+                #                          x=self.x,
+                #                          z=self.z,
+                #                          data=self.data)
+                # plots.plot_training_loss(self.loss_g_plot, self.loss_d_plot)
 
             # merged = tf.summary.merge_all()
             # writer = tf.summary.FileWriter('logs', session.graph)
@@ -575,11 +601,11 @@ def parse_args():
 
 
 if __name__ == '__main__':
-    num_steps = 2000
+    num_steps = 1000
     pre_train_steps = 1000
-    pre_train = True
-    batch_size = 80
-    input_shape = (80, 1)
+    pre_train = False
+    batch_size = 64
+    input_shape = (64, 64)
     minibatch = False
     lower_range = 0
     upper_range = 20
