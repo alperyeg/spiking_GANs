@@ -110,11 +110,12 @@ def _generator_dcgan(inpt, gf_dim, is_training):
 # distinguish accurately between generated and real samples.
 # So make it a deeper neural network, with a larger number of dimensions.
 def discriminator(inpt, h_dim, df_dim, batch_size_, minibatch_layer=True,
-                  model='MLP', reuse=False):
+                  model='MLP', is_training=False, reuse=False):
     if model == 'MLP':
         return _discriminator_mlp(inpt, h_dim, minibatch_layer, reuse)
     elif model == 'CONV':
-        return _discriminator_conv(inpt, df_dim, batch_size_, reuse)
+        return _discriminator_conv(inpt, df_dim, batch_size_, is_training,
+                                   reuse)
 
 
 def _discriminator_mlp(inpt, h_dim, minibatch_layer=True, reuse=False):
@@ -143,7 +144,7 @@ def _discriminator_mlp(inpt, h_dim, minibatch_layer=True, reuse=False):
     return tf.sigmoid(h3), h3
 
 
-def _discriminator_conv(inpt, df_dim, batch_size_, reuse=False):
+def _discriminator_conv(inpt, df_dim, batch_size_, is_training, reuse=False):
     """
     Discriminator using Convolutional Network
 
@@ -159,9 +160,15 @@ def _discriminator_conv(inpt, df_dim, batch_size_, reuse=False):
         # h1 = lrelu(self.d_bns[0](conv2d(h0, self.df_dim*2, name='d_h1_conv'),
         # self.is_training))
         h0 = ops.lrelu(ops.conv2d(inpt, df_dim, scope='d0_conv'))
-        h1 = ops.lrelu(ops.conv2d(h0, df_dim * 2, scope='d1_conv'))
-        h2 = ops.lrelu(ops.conv2d(h1, df_dim * 4, scope='d2_conv'))
-        h3 = ops.lrelu(h2, df_dim * 8, scope='d3_conv')
+        h1 = ops.lrelu(tf.contrib.layers.batch_norm(
+            ops.conv2d(h0, df_dim * 2, scope='d1_conv'),
+            is_training=is_training))
+        h2 = ops.lrelu(tf.contrib.layers.batch_norm(
+            ops.conv2d(h1, df_dim * 4, scope='d2_conv'),
+            is_training=is_training))
+        h3 = ops.lrelu(tf.contrib.layers.batch_norm(
+            ops.conv2d(h2, df_dim * 8, scope='d3_conv'),
+            is_training=is_training))
         h4 = ops.linear(tf.reshape(h3, [-1, 8192]), 1, 'd_h4_lin')
         # h4 = ops.linear(tf.reshape(h3, [batch_size_, -1]), 1, scope='d4_conv')
         return tf.nn.sigmoid(h4), h4
@@ -371,7 +378,7 @@ class GAN(object):
 
         # This defines the generator network - it takes samples from a
         # noise distribution as input, and passes them through an MLP.
-        with tf.variable_scope('Generator'):
+        with tf.variable_scope('Generator') as scope:
             self.z = tf.placeholder(tf.float32, shape=self.input_shape, name='self.z')
             self.z_sum = tf.summary.histogram("z", self.z)
             self.G = generator(self.z, self.hidden_size, self.gf_dim,
@@ -392,12 +399,14 @@ class GAN(object):
                                                 self.df_dim,
                                                 self.batch_size,
                                                 self.minibatch, reuse=False,
+                                                is_training=self.is_training,
                                                 model="CONV")
         # make a copy of D using same variables, but with G as input
         self.D2, self.D2_logits = discriminator(self.G, self.hidden_size,
                                                 self.df_dim,
                                                 self.batch_size,
                                                 self.minibatch, reuse=True,
+                                                is_training=self.is_training,
                                                 model="CONV")
 
         # Define the loss for discriminator and generator networks
@@ -431,7 +440,7 @@ class GAN(object):
 
         self.d1_sum = tf.summary.histogram("D1", self.D1)
         self.d2_sum = tf.summary.histogram("D2", self.D2)
-        self.G_sum = tf.summary.image("G", self.G)
+        self.G_sum = tf.summary.histogram("G", self.G)
         self.loss_d_real_sum = tf.summary.scalar("d_loss_real",
                                                  self.loss_d_real)
         self.loss_d_fake_sum = tf.summary.scalar("d_loss_fake",
