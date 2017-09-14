@@ -101,7 +101,8 @@ ENV/
 .mypy_cache/
 
 # Repository specific
-logs/
+lo[a-z]*s/
 *.png
 src/samples/
 src/checkpoints/
+cluster/
