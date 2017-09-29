@@ -5,7 +5,7 @@ from scipy.misc import factorial
 from quantities import Hz, s, ms
 from elephant.spike_train_generation import homogeneous_poisson_process
 from elephant.conversion import BinnedSpikeTrain
-from jelephant.core.stocmod import poisson_nonstat
+from stocmod import poisson_nonstat
 
 np.random.seed(123)
 
@@ -101,8 +101,8 @@ class DataDistribution(object):
         :return: binned spiketrains, corresponding spikes, and the rate signal
         """
         t1 = 2 * t_stop
-        rate_profile = [rate1 for _ in range(t_stop / dt)] + [rate2 for _ in range(
-            (t1 - t_stop) / dt)]
+        rate_profile = [rate1 for _ in range(int(t_stop / dt))] + [rate2 for _ in range(
+            int((t1 - t_stop) / dt))]
         rate_signal = neo.AnalogSignal(signal=rate_profile, units=Hz,
                                        sampling_period=dt)
         spikes = poisson_nonstat(rate_signal, N=num_sts)

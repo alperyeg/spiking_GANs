@@ -104,19 +104,24 @@ elif opt.dataset == 'fake':
 
 # Create dataset
 else:
-    binned = []
     num_samples = 10
-    # TODO make the range parameter variable
-    for _ in range(num_samples):
+    raw_data = np.empty((num_samples, 1, opt.imageSize, opt.imageSize),
+                      dtype=np.float32)
+    binned = np.empty((num_samples, 1, opt.imageSize, opt.imageSize),
+                      dtype=np.float32)
+    for i in range(num_samples):
         data = DataDistribution.poisson_nonstat_sample(t_stop=10000 * pq.ms,
                                                        num_bins=64,
                                                        num_sts=64)[0].to_array().ravel()
-        data = data.reshape((1, 64, 64))
+        data = data.reshape((1, opt.imageSize, opt.imageSize))
+        raw_data[i] = data
         # TODO how to normalize binned data
-        data /= np.max(data)
+        data = np.divide(data, np.max(data))
         data = (data - data.mean()) / data.std()
-        binned.append(data)
+        binned[i] = data
+        # Convert list to float32
     tensor_all = torch.from_numpy(np.array(binned, dtype=np.float32))
+    tensor_raw = torch.from_numpy(raw_data)
     # preprocess(tensor_all)
     targets = torch.ones(num_samples)
     dataset = TensorDataset(tensor_all, targets)
@@ -297,7 +302,7 @@ for epoch in range(opt.niter):
             % (epoch, opt.niter, i, len(dataloader),
                errD.data[0], errG.data[0], D_x, D_G_z1, D_G_z2))
         if i % 100 == 0:
-            vutils.save_image(real_cpu,
+            vutils.save_image(tensor_raw,
                               '%s/real_samples.png' % opt.outf,
                               normalize=True)
             fake = netG(fixed_noise)

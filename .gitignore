@@ -103,6 +103,7 @@ ENV/
 # Repository specific
 lo[a-z]*s/
 *.png
+.idea
 src/samples/
 src/checkpoints/
 cluster/
