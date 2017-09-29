@@ -106,7 +106,7 @@ elif opt.dataset == 'fake':
 else:
     num_samples = 10
     raw_data = np.empty((num_samples, 1, opt.imageSize, opt.imageSize),
-                      dtype=np.float32)
+                        dtype=np.float32)
     binned = np.empty((num_samples, 1, opt.imageSize, opt.imageSize),
                       dtype=np.float32)
     for i in range(num_samples):
