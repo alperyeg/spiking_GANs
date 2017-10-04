@@ -107,5 +107,5 @@ lo[a-z]*s/
 src/samples/
 src/checkpoints/
 cluster/
-src/cifar10
-src/lsun
+src/cifar10/
+src/lsun/

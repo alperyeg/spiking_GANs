@@ -17,6 +17,7 @@ import utils
 import datetime
 from torch.utils.data import TensorDataset
 from torch.autograd import Variable
+from tensorboardX import SummaryWriter
 from data_generation import DataDistribution
 
 parser = argparse.ArgumentParser()
@@ -72,6 +73,9 @@ cudnn.benchmark = True
 # Define a dictionary to save results
 save_dict = {}
 
+# Define writer object for tensorboard
+writer = SummaryWriter(log_dir=os.path.join(opt.outf, 'tensorboard'))
+
 if torch.cuda.is_available() and not opt.cuda:
     print(
         "WARNING: You have a CUDA device, so you should probably run with --cuda")
@@ -115,10 +119,10 @@ else:
     num_samples = 10
     # Matrices to store, shape: samples x C x H x W
     # C: channels, H: height, W: width
-    raw_data = np.empty((num_samples, 1, opt.imageSize, opt.imageSize),
-                        dtype=np.float32)
-    binned = np.empty((num_samples, 1, opt.imageSize, opt.imageSize),
-                      dtype=np.float32)
+    binned_data = np.empty((num_samples, 1, opt.imageSize, opt.imageSize),
+                           dtype=np.float32)
+    norm_data = np.empty((num_samples, 1, opt.imageSize, opt.imageSize),
+                         dtype=np.float32)
     for i in range(num_samples):
         data = DataDistribution.poisson_nonstat_sample(t_stop=10000 * pq.ms,
                                                        num_bins=64,
@@ -126,15 +130,15 @@ else:
             0].to_array().ravel()
         # Reshape to required format
         data = data.reshape((1, opt.imageSize, opt.imageSize))
-        raw_data[i] = data
+        binned_data[i] = data
         # Normalize data
         # TODO how to normalize binned data
         data = np.divide(data, np.max(data))
         data = (data - data.mean()) / data.std()
-        binned[i] = data
+        norm_data[i] = data
     # Convert list to float32
-    tensor_all = torch.from_numpy(np.array(binned, dtype=np.float32))
-    tensor_raw = torch.from_numpy(raw_data)
+    tensor_all = torch.from_numpy(np.array(norm_data, dtype=np.float32))
+    tensor_raw = torch.from_numpy(binned_data)
     # preprocess(tensor_all)
     # Define targets as ones
     targets = torch.ones(num_samples)
@@ -142,7 +146,7 @@ else:
     dataset = TensorDataset(tensor_all, targets)
     nc = 1
     # Save raw data to save_dict
-    # save_dict['raw_data'] = raw_data
+    save_dict['binned_data'] = binned_data
 
 assert dataset
 dataloader = torch.utils.data.DataLoader(dataset, batch_size=opt.batchSize,
@@ -277,8 +281,13 @@ save_dict['errD'] = []
 save_dict['errD_fake'] = []
 save_dict['errD_real'] = []
 save_dict['errG'] = []
+save_dict['fake_data'] = []
+
 
 for epoch in range(opt.niter):
+    # Create lists per epochs
+    [save_dict[elem].append([epoch]) for elem in save_dict if
+     not elem == 'binned_data']
     for i, data in enumerate(dataloader, 0):
         ############################
         # (1) Update D network: maximize log(D(x)) + log(1 - D(G(z)))
@@ -298,7 +307,10 @@ for epoch in range(opt.niter):
         errD_real = criterion(output, labelv)
         errD_real.backward()
         D_x = output.data.mean()
-        save_dict['D_x'].append((epoch, i, output.data))
+
+        save_dict['D_x'][epoch].append((i, output.data))
+        writer.add_scalar('data/D_x', D_x, epoch)
+        writer.add_histogram('histogram/D_x', output.data, epoch)
 
         # train with fake
         noise.resize_(batch_size, nz, 1, 1).normal_(0, 1)
@@ -311,10 +323,18 @@ for epoch in range(opt.niter):
         D_G_z1 = output.data.mean()
         errD = errD_real + errD_fake
         optimizerD.step()
-        save_dict['G_z1'].append((epoch, i, output.data))
-        save_dict['errD'].append((epoch, i, errD.data[0]))
-        save_dict['errD_real'].append((epoch, i, errD_real.data[0]))
-        save_dict['errD_fake'].append((epoch, i, errD_fake.data[0]))
+
+        save_dict['G_z1'][epoch].append((i, output.data))
+        save_dict['errD'][epoch].append((i, errD.data[0]))
+        save_dict['errD_real'][epoch].append((i, errD_real.data[0]))
+        save_dict['errD_fake'][epoch].append((i, errD_fake.data[0]))
+        writer.add_scalar('data/G_z1', D_G_z1, epoch)
+        writer.add_scalar('data/errD', errD.data[0], epoch)
+        writer.add_scalar('data/errD_real', errD_real.data[0], epoch)
+        writer.add_scalar('data/errD_fake', errD_fake.data[0], epoch)
+        writer.add_scalar('data/G_z1', D_G_z1, epoch)
+        writer.add_histogram('histogram/G_z1', output.data, epoch)
+
 
         ############################
         # (2) Update G network: maximize log(D(G(z)))
@@ -327,8 +347,13 @@ for epoch in range(opt.niter):
         errG.backward()
         D_G_z2 = output.data.mean()
         optimizerG.step()
-        save_dict['G_z2'].append((epoch, i, output.data))
-        save_dict['errG'].append((epoch, i, errG.data[0]))
+
+        save_dict['G_z2'][epoch].append((i, output.data))
+        save_dict['errG'][epoch].append((i, errG.data[0]))
+        writer.add_scalar('data/errG', errG.data[0], epoch)
+        writer.add_scalar('data/G_z2', D_G_z2, epoch)
+        writer.add_histogram('histogram/G_z2', output.data, epoch)
+
 
         print(
             '[%d/%d][%d/%d] Loss_D: %.4f Loss_G: %.4f D(x): %.4f D(G(z)): %.4f / %.4f'
@@ -343,6 +368,7 @@ for epoch in range(opt.niter):
                               '%s/fake_samples_epoch_%03d.png' % (
                                   opt.outf, epoch),
                               normalize=True)
+            save_dict['fake_data'][epoch].append((i, fake.data))
 
     # do checkpointing
     checkpoint_path = os.path.join(opt.outf, 'checkpoints')
@@ -353,3 +379,4 @@ for epoch in range(opt.niter):
     torch.save(netD.state_dict(), '%s/netD_epoch_%d.pth' % (checkpoint_path,
                                                             epoch))
 utils.save_samples(save_dict, path=opt.outf, filename='results.npy')
+writer.close()
