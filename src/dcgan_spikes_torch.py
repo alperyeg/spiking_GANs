@@ -13,6 +13,8 @@ import torch.utils.data
 import torchvision.datasets as dset
 import torchvision.transforms as transforms
 import torchvision.utils as vutils
+import utils
+import datetime
 from torch.utils.data import TensorDataset
 from torch.autograd import Variable
 from data_generation import DataDistribution
@@ -44,7 +46,8 @@ parser.add_argument('--netG', default='',
                     help="path to netG (to continue training)")
 parser.add_argument('--netD', default='',
                     help="path to netD (to continue training)")
-parser.add_argument('--outf', default='.',
+parser.add_argument('--outf', default='./logs/run_{}'.format(
+    datetime.datetime.now().strftime("%Y-%m-%d_%H-%M")),
                     help='folder to output images and model checkpoints')
 parser.add_argument('--manualSeed', type=int, help='manual seed')
 
@@ -53,8 +56,8 @@ print(opt)
 
 try:
     os.makedirs(opt.outf)
-except OSError:
-    pass
+except OSError as ose:
+    print(ose)
 
 if opt.manualSeed is None:
     opt.manualSeed = 123
@@ -65,6 +68,9 @@ if opt.cuda:
     torch.cuda.manual_seed_all(opt.manualSeed)
 
 cudnn.benchmark = True
+
+# Define a dictionary to save results
+save_dict = {}
 
 if torch.cuda.is_available() and not opt.cuda:
     print(
@@ -95,7 +101,8 @@ elif opt.dataset == 'cifar10':
                            transform=transforms.Compose([
                                transforms.Scale(opt.imageSize),
                                transforms.ToTensor(),
-                               transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
+                               transforms.Normalize((0.5, 0.5, 0.5),
+                                                    (0.5, 0.5, 0.5)),
                            ]))
     nc = 3
 elif opt.dataset == 'fake':
@@ -104,7 +111,10 @@ elif opt.dataset == 'fake':
 
 # Create dataset
 else:
+    # Number of data samples
     num_samples = 10
+    # Matrices to store, shape: samples x C x H x W
+    # C: channels, H: height, W: width
     raw_data = np.empty((num_samples, 1, opt.imageSize, opt.imageSize),
                         dtype=np.float32)
     binned = np.empty((num_samples, 1, opt.imageSize, opt.imageSize),
@@ -112,20 +122,27 @@ else:
     for i in range(num_samples):
         data = DataDistribution.poisson_nonstat_sample(t_stop=10000 * pq.ms,
                                                        num_bins=64,
-                                                       num_sts=64)[0].to_array().ravel()
+                                                       num_sts=64)[
+            0].to_array().ravel()
+        # Reshape to required format
         data = data.reshape((1, opt.imageSize, opt.imageSize))
         raw_data[i] = data
+        # Normalize data
         # TODO how to normalize binned data
         data = np.divide(data, np.max(data))
         data = (data - data.mean()) / data.std()
         binned[i] = data
-        # Convert list to float32
+    # Convert list to float32
     tensor_all = torch.from_numpy(np.array(binned, dtype=np.float32))
     tensor_raw = torch.from_numpy(raw_data)
     # preprocess(tensor_all)
+    # Define targets as ones
     targets = torch.ones(num_samples)
+    # Create dataset
     dataset = TensorDataset(tensor_all, targets)
     nc = 1
+    # Save raw data to save_dict
+    # save_dict['raw_data'] = raw_data
 
 assert dataset
 dataloader = torch.utils.data.DataLoader(dataset, batch_size=opt.batchSize,
@@ -252,6 +269,15 @@ fixed_noise = Variable(fixed_noise)
 optimizerD = optim.Adam(netD.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
 optimizerG = optim.Adam(netG.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
 
+# New dictionary entries to save
+save_dict['D_x'] = []
+save_dict['G_z1'] = []
+save_dict['G_z2'] = []
+save_dict['errD'] = []
+save_dict['errD_fake'] = []
+save_dict['errD_real'] = []
+save_dict['errG'] = []
+
 for epoch in range(opt.niter):
     for i, data in enumerate(dataloader, 0):
         ############################
@@ -272,6 +298,7 @@ for epoch in range(opt.niter):
         errD_real = criterion(output, labelv)
         errD_real.backward()
         D_x = output.data.mean()
+        save_dict['D_x'].append((epoch, i, output.data))
 
         # train with fake
         noise.resize_(batch_size, nz, 1, 1).normal_(0, 1)
@@ -284,6 +311,10 @@ for epoch in range(opt.niter):
         D_G_z1 = output.data.mean()
         errD = errD_real + errD_fake
         optimizerD.step()
+        save_dict['G_z1'].append((epoch, i, output.data))
+        save_dict['errD'].append((epoch, i, errD.data[0]))
+        save_dict['errD_real'].append((epoch, i, errD_real.data[0]))
+        save_dict['errD_fake'].append((epoch, i, errD_fake.data[0]))
 
         ############################
         # (2) Update G network: maximize log(D(G(z)))
@@ -296,6 +327,8 @@ for epoch in range(opt.niter):
         errG.backward()
         D_G_z2 = output.data.mean()
         optimizerG.step()
+        save_dict['G_z2'].append((epoch, i, output.data))
+        save_dict['errG'].append((epoch, i, errG.data[0]))
 
         print(
             '[%d/%d][%d/%d] Loss_D: %.4f Loss_G: %.4f D(x): %.4f D(G(z)): %.4f / %.4f'
@@ -312,5 +345,11 @@ for epoch in range(opt.niter):
                               normalize=True)
 
     # do checkpointing
-    torch.save(netG.state_dict(), '%s/netG_epoch_%d.pth' % (opt.outf, epoch))
-    torch.save(netD.state_dict(), '%s/netD_epoch_%d.pth' % (opt.outf, epoch))
+    checkpoint_path = os.path.join(opt.outf, 'checkpoints')
+    if not os.path.exists(checkpoint_path):
+        os.mkdir(checkpoint_path)
+    torch.save(netG.state_dict(), '%s/netG_epoch_%d.pth' % (checkpoint_path,
+                                                            epoch))
+    torch.save(netD.state_dict(), '%s/netD_epoch_%d.pth' % (checkpoint_path,
+                                                            epoch))
+utils.save_samples(save_dict, path=opt.outf, filename='results.npy')
