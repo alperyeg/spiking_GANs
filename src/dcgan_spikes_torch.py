@@ -15,6 +15,7 @@ import torchvision.transforms as transforms
 import torchvision.utils as vutils
 import utils
 import datetime
+import time
 from torch.utils.data import TensorDataset
 from torch.autograd import Variable
 from tensorboardX import SummaryWriter
@@ -34,12 +35,12 @@ parser.add_argument('--nz', type=int, default=100,
                     help='size of the latent z vector')
 parser.add_argument('--ngf', type=int, default=64)
 parser.add_argument('--ndf', type=int, default=64)
-parser.add_argument('--niter', type=int, default=25,
+parser.add_argument('--niter', type=int, default=30,
                     help='number of epochs to train for')
-parser.add_argument('--lr', type=float, default=0.0002,
-                    help='learning rate, default=0.0002')
-parser.add_argument('--beta1', type=float, default=0.5,
-                    help='beta1 for adam. default=0.5')
+parser.add_argument('--lr', type=float, default=0.0001,
+                    help='learning rate, default=0.0001')
+parser.add_argument('--beta1', type=float, default=0.4,
+                    help='beta1 for adam. default=0.4')
 parser.add_argument('--cuda', action='store_true', help='enables cuda')
 parser.add_argument('--ngpu', type=int, default=1,
                     help='number of GPUs to use')
@@ -116,7 +117,9 @@ elif opt.dataset == 'fake':
 # Create dataset
 else:
     # Number of data samples
-    num_samples = 10
+    num_samples = 10000
+    print('generating data')
+    t = time.time()
     # Matrices to store, shape: samples x C x H x W
     # C: channels, H: height, W: width
     binned_data = np.empty((num_samples, 1, opt.imageSize, opt.imageSize),
@@ -134,11 +137,12 @@ else:
         # Normalize data
         # TODO how to normalize binned data
         data = np.divide(data, np.max(data))
-        data = (data - data.mean()) / data.std()
+        # data = (data - data.mean()) / data.std()
         norm_data[i] = data
+    print('done generating data, in sec: {}'.format(time.time() - t))
     # Convert list to float32
     tensor_all = torch.from_numpy(np.array(norm_data, dtype=np.float32))
-    tensor_raw = torch.from_numpy(binned_data)
+    tensor_raw = torch.from_numpy(np.array(binned_data, dtype=np.float32))
     # preprocess(tensor_all)
     # Define targets as ones
     targets = torch.ones(num_samples)
@@ -147,6 +151,11 @@ else:
     nc = 1
     # Save raw data to save_dict
     save_dict['binned_data'] = binned_data
+    save_dict['num_samples'] = num_samples
+
+    vutils.save_image(tensor_raw,
+                      '{}/real_samples_normalized.png'.format(opt.outf),
+                      normalize=True)
 
 assert dataset
 dataloader = torch.utils.data.DataLoader(dataset, batch_size=opt.batchSize,
@@ -255,7 +264,9 @@ criterion = nn.BCELoss()
 
 input_ = torch.FloatTensor(opt.batchSize, 1, opt.imageSize, opt.imageSize)
 noise = torch.FloatTensor(opt.batchSize, nz, 1, 1)
-fixed_noise = torch.FloatTensor(opt.batchSize, nz, 1, 1).normal_(0, 1)
+# fixed_noise = torch.FloatTensor(opt.batchSize, nz, 1, 1).normal_(0, 1)
+fixed_noise = np.random.poisson(lam=2, size=(opt.batchSize, nz, 1, 1)).astype(np.float32)
+fixed_noise = torch.from_numpy(np.divide(fixed_noise, np.max(fixed_noise)))
 label = torch.FloatTensor(opt.batchSize)
 real_label = 1
 fake_label = 0
@@ -287,7 +298,7 @@ save_dict['fake_data'] = []
 for epoch in range(opt.niter):
     # Create lists per epochs
     [save_dict[elem].append([epoch]) for elem in save_dict if
-     not elem == 'binned_data']
+     not elem in ['binned_data', 'num_samples']]
     for i, data in enumerate(dataloader, 0):
         ############################
         # (1) Update D network: maximize log(D(x)) + log(1 - D(G(z)))
@@ -313,7 +324,9 @@ for epoch in range(opt.niter):
         writer.add_histogram('histogram/D_x', output.data, epoch)
 
         # train with fake
-        noise.resize_(batch_size, nz, 1, 1).normal_(0, 1)
+        noise = np.random.poisson(lam=2, size=(batch_size, nz, 1, 1)).astype(np.float32)
+        noise = torch.from_numpy(np.divide(noise, noise.max()))
+        noise.resize_(batch_size, nz, 1, 1)
         noisev = Variable(noise)
         fake = netG(noisev)
         labelv = Variable(label.fill_(fake_label))
@@ -360,14 +373,15 @@ for epoch in range(opt.niter):
             % (epoch, opt.niter, i, len(dataloader),
                errD.data[0], errG.data[0], D_x, D_G_z1, D_G_z2))
         if i % 100 == 0:
-            vutils.save_image(tensor_raw,
-                              '%s/real_samples.png' % opt.outf,
-                              normalize=True)
             fake = netG(fixed_noise)
+            vutils.save_image(fake.data,
+                              '%s/fake_samples_normalized_epoch_%03d.png' % (
+                                  opt.outf, epoch),
+                              normalize=True)
             vutils.save_image(fake.data,
                               '%s/fake_samples_epoch_%03d.png' % (
                                   opt.outf, epoch),
-                              normalize=True)
+                              normalize=False)
             save_dict['fake_data'][epoch].append((i, fake.data))
 
     # do checkpointing
