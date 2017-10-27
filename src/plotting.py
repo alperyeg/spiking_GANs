@@ -1,7 +1,6 @@
 import matplotlib.pyplot as plt
 import seaborn as sns
 import numpy as np
-import data_generation as dgen
 
 from matplotlib import animation
 
@@ -165,3 +164,104 @@ def save_animation(path, anim_frames, **kwargs):
     Writer = animation.writers['ffmpeg']
     writer = Writer(fps=30, bitrate=1800)
     anim.save(path + 'anim.mp4', writer=writer)
+
+
+def plot_mean_activity(epoch=-1, real_data_num=(-1, -1),
+                       sample_num=(-1, -1, -1, -1), path='results.npy'):
+    """
+    Mean activity of the results
+
+    :param epoch: int, epoch number to be considered
+    :param real_data_num: tuple or list of tuples
+        1-dim: sample
+        2-dim: Channel (here only one) with binned data of shape 64x64
+    :param sample_num: tuple or list of tuples
+        1-dim: list containing lists of integer and tuple, integer indicates the
+            epoch, the tuple contains the step index and the output data,
+            [int, tuple]
+        2-dim: tuple of integer and data as torch.FloatTensor, the integer
+            indicates the step index of the corresponding batch in the loop
+            (int, FloatTensor)
+        3-dim: FloatTensor of shape 64x1x64x64:
+        4-dim: 64 samples x
+            Channel number (here always only 1) x
+            64x64 normalized binned data
+
+    :param path: Path and filename of the results
+    """
+    if not isinstance(epoch, list):
+        epoch = [epoch]
+    if not isinstance(sample_num, list):
+        sample_num = [sample_num]
+    # load all data
+    data = np.load(path).item()
+    # load real data
+    reals = data['binned_data']
+    fakes = data['fake_data']
+    real_sample = reals[real_data_num[0]][real_data_num[1]]
+    real_sample /= real_sample.max()
+    for ep in epoch:
+        for sn in sample_num:
+            # load fake sample
+            fake_sample = fakes[ep][sn[0]][sn[1]][sn[2]][sn[3]].numpy()
+            plt.plot(fake_sample.mean(axis=0), label='ep{}'.format(ep))
+    plt.plot(real_sample.mean(axis=0), label='real{}'.format(-1), color='red',
+             lw=3)
+    plt.xlim(0, len(real_sample))
+    plt.xlabel('Bins', fontsize=14.)
+    plt.ylabel('Counts', fontsize=14.)
+    plt.xticks(range(0, len(real_sample), 5))
+    plt.title('Averaged activity', fontsize=14.)
+    plt.legend()
+
+    plt.show()
+
+
+def plot_mean_histogram(epoch=-1, real_data_num=(-1, -1),
+                        sample_num=(-1, -1, -1, -1), bins=32,
+                        path='results.npy',
+                        hist_kwgs=None, **kwargs):
+    """
+    Histogram of the averaged results
+
+
+    :param epoch: int, epoch number to be considered
+    :param real_data_num: tuple
+        1-dim: sample
+        2-dim: Channel (here only one) with binned data of shape 64x64
+    :param sample_num: tuple
+        1-dim: list containing lists of integer and tuple, integer indicates the
+            epoch, the tuple contains the step index and the output data,
+            [int, tuple]
+        2-dim: tuple of integer and data as torch.FloatTensor, the integer
+            indicates the step index of the corresponding batch in the loop
+            (int, FloatTensor)
+        3-dim: FloatTensor of shape 64x1x64x64:
+        4-dim: 64 samples x
+            Channel number (here always only 1) x
+            64x64 normalized binned data
+    :param bins: int, number of bins for the histogram
+    :param path: Path and filename of the results
+    :param hist_kwgs: histogram keywords which are passed on to the histogram
+        function used by s seaborns `distplot` (dictionary, optional)
+    :param kwargs: key word arguments for seaborns `distplot`
+        (dictionary, optional)
+    """
+    if not isinstance(sample_num, list):
+        sample_num = [sample_num]
+    # load all data
+    data = np.load(path).item()
+    # load real data
+    reals = data['binned_data']
+    fakes = data['fake_data']
+    real_sample = reals[real_data_num[0]][real_data_num[1]]
+    real_sample /= real_sample.max()
+    for sn in sample_num:
+        fake_sample = fakes[epoch][sn[0]][sn[1]][sn[2]][sn[3]].numpy()
+        sns.distplot(fake_sample.mean(axis=0).ravel(), label='fake', bins=bins,
+                     hist_kws=hist_kwgs, **kwargs)
+    sns.distplot(real_sample.mean(axis=0), label='real', bins=bins,
+                 color='red', hist_kws=hist_kwgs, **kwargs)
+    plt.title('Mean distribution')
+    plt.legend()
+    plt.show()

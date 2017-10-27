@@ -150,6 +150,10 @@ else:
     dataset = TensorDataset(tensor_all, targets)
     nc = 1
     # Save raw data to save_dict
+    '''
+    1-dim: sample
+    2-dim: Channel (here only one) with binned data of shape 64x64
+    '''
     save_dict['binned_data'] = binned_data
     save_dict['num_samples'] = num_samples
 
@@ -382,6 +386,21 @@ for epoch in range(opt.niter):
                               '%s/fake_samples_epoch_%03d.png' % (
                                   opt.outf, epoch),
                               normalize=False)
+            '''
+            1-dim: list with all the data, listed according the epochs
+            2-dim: list containing lists of integer and tuple, 
+                integer indicates the epoch, the tuple contains the step index 
+                and the output data,
+                [int, tuple]
+            3-dim: tuple of integer and data as torch.FloatTensor, the integer
+                indicates the step index of the corresponding batch in the loop
+                (int, FloatTensor)
+            4-dim: FloatTensor of shape 64x1x64x64: 
+            5-dim: 
+                64 samples x 
+                Channel number (here always only 1) x 
+                64x64 normalized binned data  
+            '''
             save_dict['fake_data'][epoch].append((i, fake.data))
 
     # do checkpointing
