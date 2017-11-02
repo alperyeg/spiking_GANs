@@ -265,3 +265,32 @@ def plot_mean_histogram(epoch=-1, real_data_num=(-1, -1),
     plt.title('Mean distribution')
     plt.legend()
     plt.show()
+
+
+def plot_loss(path='results.npy', **kwargs):
+    """
+    Plot the loss of the discriminator and generator
+
+    :param path: string, Path to the results file
+    :param kwargs: dictionary, additionally plot parameter
+    """
+    # load data 
+    data = np.load(path).item()
+    # get all errors 
+    err_d = data['errD']
+    err_g = data['errG']
+    mean_d = []
+    mean_g = []
+    # loop over epochs
+    for ep_d, ep_g in zip(err_d, err_g):
+        mean_d.append(np.array(ep_d[1:])[1:, 1].mean())
+        mean_g.append(np.array(ep_g[1:])[1:, 1].mean())
+    plt.plot(range(len(err_d)), mean_d, label='Discriminator', **kwargs)
+    plt.plot(range(len(err_g)), mean_g, label='Generator', **kwargs)
+    plt.legend()
+    plt.title('Training loss')
+    plt.xlabel('Epochs')
+    plt.ylabel('Loss values')
+    plt.xticks(range(len(err_g)))
+    plt.xlim(xmax=(len(err_g) - 1))
+    plt.show()
