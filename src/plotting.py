@@ -167,7 +167,8 @@ def save_animation(path, anim_frames, **kwargs):
 
 
 def plot_mean_activity(epoch=-1, real_data_num=(-1, -1),
-                       sample_num=(-1, -1, -1, -1), path='results.npy'):
+                       sample_num=(-1, -1, -1, -1), path='results.npy',
+                       save=False, figname='mean_activity.pdf'):
     """
     Mean activity of the results
 
@@ -213,14 +214,16 @@ def plot_mean_activity(epoch=-1, real_data_num=(-1, -1),
     plt.xticks(range(0, len(real_sample), 5))
     plt.title('Averaged activity', fontsize=14.)
     plt.legend()
-
+    if save:
+        plt.savefig(figname)
     plt.show()
 
 
 def plot_mean_histogram(epoch=-1, real_data_num=(-1, -1),
                         sample_num=(-1, -1, -1, -1), bins=32,
                         path='results.npy',
-                        hist_kwgs=None, **kwargs):
+                        hist_kwgs=None, save=False, figname='mean_histogram.pdf',
+                        **kwargs):
     """
     Histogram of the averaged results
 
@@ -264,10 +267,12 @@ def plot_mean_histogram(epoch=-1, real_data_num=(-1, -1),
                  color='red', hist_kws=hist_kwgs, **kwargs)
     plt.title('Mean distribution')
     plt.legend()
+    if save:
+        plt.savefig(figname)
     plt.show()
 
 
-def plot_loss(path='results.npy', **kwargs):
+def plot_loss(path='results.npy', save=False, figname='loss.pdf', **kwargs):
     """
     Plot the loss of the discriminator and generator
 
@@ -293,4 +298,7 @@ def plot_loss(path='results.npy', **kwargs):
     plt.ylabel('Loss values')
     plt.xticks(range(len(err_g)))
     plt.xlim(xmax=(len(err_g) - 1))
+    if save:
+        plt.savefig(figname)
+        print('saved')
     plt.show()
