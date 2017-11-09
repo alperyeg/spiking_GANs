@@ -5,7 +5,7 @@ import numpy as np
 from matplotlib import animation
 
 
-sns.set(color_codes=True)
+sns.set(color_codes=True, context='paper')
 cmap = sns.husl_palette(10, l=.4)
 
 
@@ -213,6 +213,12 @@ def plot_mean_activity(epoch=-1, real_data_num=(-1, -1),
     plt.ylabel('Counts', fontsize=14.)
     plt.xticks(range(0, len(real_sample), 5))
     plt.title('Averaged activity', fontsize=14.)
+    ax = plt.gca()
+    max_xtick = max(ax.get_xlim()) - ax.get_xticks()[-1] + ax.get_xticks()[-2]
+    max_ytick = max(ax.get_ylim())
+    plt.text(x=max_xtick, y=max_ytick,
+             s="real sample: {0} \n fake sample: {1}".format(real_data_num, sample_num),
+             ha='left')
     plt.legend()
     if save:
         plt.savefig(figname)
@@ -259,13 +265,20 @@ def plot_mean_histogram(epoch=-1, real_data_num=(-1, -1),
     fakes = data['fake_data']
     real_sample = reals[real_data_num[0]][real_data_num[1]]
     real_sample /= real_sample.max()
+    if epoch == -1:
+        epoch = len(fakes) - 1
     for sn in sample_num:
         fake_sample = fakes[epoch][sn[0]][sn[1]][sn[2]][sn[3]].numpy()
         sns.distplot(fake_sample.mean(axis=0).ravel(), label='fake', bins=bins,
                      hist_kws=hist_kwgs, **kwargs)
-    sns.distplot(real_sample.mean(axis=0), label='real', bins=bins,
-                 color='red', hist_kws=hist_kwgs, **kwargs)
-    plt.title('Mean distribution')
+    distp = sns.distplot(real_sample.mean(axis=0), label='real', bins=bins,
+                         color='red', hist_kws=hist_kwgs, **kwargs)
+    max_xtick = max(distp.get_xlim()) - distp.get_xticks()[-1] + distp.get_xticks()[-2]
+    max_ytick = max(distp.get_ylim())
+    plt.title('Distribution of mean activity (epoch:{})'.format(epoch), fontsize=14)
+    plt.text(x=max_xtick, y=max_ytick,
+             s="real sample: {0} \n fake sample: {1}".format(real_data_num, sample_num),
+             ha='left')
     plt.legend()
     if save:
         plt.savefig(figname)
@@ -300,5 +313,4 @@ def plot_loss(path='results.npy', save=False, figname='loss.pdf', **kwargs):
     plt.xlim(xmax=(len(err_g) - 1))
     if save:
         plt.savefig(figname)
-        print('saved')
     plt.show()
