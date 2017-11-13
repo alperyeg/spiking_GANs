@@ -6,6 +6,7 @@ from quantities import Hz, s, ms
 from elephant.spike_train_generation import homogeneous_poisson_process
 from elephant.conversion import BinnedSpikeTrain
 from stocmod import poisson_nonstat
+from STP_generation import generate_sts
 
 np.random.seed(123)
 
@@ -110,6 +111,27 @@ class DataDistribution(object):
             binned_sts = BinnedSpikeTrain(spikes, num_bins=num_bins)
             return binned_sts, spikes, rate_signal
         return spikes
+
+    @staticmethod
+    def gen_nonstat_sample(data_type=6, t=10000 * ms, sample_period=10 * ms,
+                           num_bins=100, num_sts=1, binned=True):
+        """
+        :param data_type: int, An integer specifying the type of
+            background activity
+        :param t: quantity.Quantity, Simulation time. Default is 1000 * pq.ms
+        :param sample_period: quantity.Quantity, Sampling period of the
+            rate profile. Default is 10 * pq.ms
+        :param num_bins: int, Number of bins
+        :param num_sts: int, Number of spike trains
+        :param binned: bool, If the spike trains should be binned
+        :return: binned spiketrains and corresponding spiketrains
+        """
+        sts = generate_sts(data_type, T=t, sampl_period=sample_period,
+                           N=num_sts)[0]
+        if binned:
+            binned_sts = BinnedSpikeTrain(sts, num_bins=num_bins)
+            return binned_sts, sts
+        return sts
 
 
 class GeneratorDistribution(object):

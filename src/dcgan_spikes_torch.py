@@ -16,6 +16,7 @@ import torchvision.utils as vutils
 import utils
 import datetime
 import time
+
 from torch.utils.data import TensorDataset
 from torch.autograd import Variable
 from tensorboardX import SummaryWriter
@@ -23,7 +24,9 @@ from data_generation import DataDistribution
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--dataset', required=False,
-                    help='cifar10 | lsun | imagenet | folder | lfw | fake')
+                    help='cifar10 | lsun | imagenet | folder | lfw | fake | '
+                         'step_rate | variability',
+                    default='variability')
 parser.add_argument('--dataroot', required=False, help='path to dataset')
 parser.add_argument('--workers', type=int,
                     help='number of data loading workers', default=2)
@@ -117,7 +120,7 @@ elif opt.dataset == 'fake':
 # Create dataset
 else:
     # Number of data samples
-    num_samples = 10000
+    num_samples = 10
     print('generating data')
     t = time.time()
     # Matrices to store, shape: samples x C x H x W
@@ -127,10 +130,17 @@ else:
     norm_data = np.empty((num_samples, 1, opt.imageSize, opt.imageSize),
                          dtype=np.float32)
     for i in range(num_samples):
-        data = DataDistribution.poisson_nonstat_sample(t_stop=10000 * pq.ms,
+        if opt.dataset == 'step_rate':
+            data = DataDistribution.poisson_nonstat_sample(t_stop=10000 * pq.ms,
+                                                           num_bins=64,
+                                                           num_sts=64)[
+                0].to_array().ravel()
+        elif opt.dataset == 'variability':
+            data = DataDistribution.gen_nonstat_sample(6, t=20000 * pq.ms,
+                                                       sample_period=10 * pq.ms,
                                                        num_bins=64,
                                                        num_sts=64)[
-            0].to_array().ravel()
+                0].to_array().ravel()
         # Reshape to required format
         data = data.reshape((1, opt.imageSize, opt.imageSize))
         binned_data[i] = data
