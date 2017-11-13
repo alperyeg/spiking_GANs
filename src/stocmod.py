@@ -1788,7 +1788,7 @@ def poisson_nonstat_thinning(rate_signal, N=1, cont_sign_method='step'):
         sts = []
         for st in poiss:
             # Compute the rate profile at each spike time by interpolation
-            lamb = interp(signal=rate_signal, times=st.magnitude * st.units)
+            lamb = interp(signal=rate_signal, times=st.magnitude * st.units).ravel()
 
             # Accept each spike at time t with probability r(t)/max_rate
             u = np.random.uniform(size=len(st)) * lambda_star
