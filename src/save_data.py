@@ -31,7 +31,7 @@ for i in range(num_samples):
             num_bins=64,
             num_sts=64)
     elif data_type == 'variability':
-        data, spikes = DataDistribution.gen_nonstat_sample(6, t=20000 * pq.ms,
+        data, spikes = DataDistribution.gen_nonstat_sample(6, t=10000 * pq.ms,
                                                            sample_period=10 * pq.ms,
                                                            num_bins=64,
                                                            num_sts=64)
@@ -47,8 +47,10 @@ for i in range(num_samples):
 print('done generating data, in sec: {}'.format(time.time() - t))
 
 save_dict['binned_data'] = binned_data
+save_dict['normed_data'] = norm_data
 save_dict['num_samples'] = num_samples
 save_dict['imageSize'] = imageSize
 save_dict['spikes'] = raw_data
 save_dict['data_type'] = data_type
-utils.save_samples(save_dict, path='.', filename='data_NS{}_IS{}.npy'.format(num_samples, imageSize))
+utils.save_samples(save_dict, path='.', filename='data_NS{}_IS{}_type-{}.npy'.format(num_samples, 
+                                                                                     imageSize, data_type))
