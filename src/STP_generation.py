@@ -162,8 +162,7 @@ def generate_sts(data_type, N=100, T=1000 * pq.ms, sampl_period=10 * pq.ms):
             rate_profile = neo.AnalogSignal(
                 rate_profile, sampling_period=sampl_period)
             # print np.where(np.diff(rate_profile)>0*pq.Hz)
-            sts += stoc.poisson_nonstat_thinning(
-                rate_profile, N=1, cont_sign_method='step')
+            sts += stoc.poisson_nonstat(rate_profile, N=1)
 
     # Indep Poisson, heterog, nonstat: 10/60/10 Hz + .05 * i, i=-50,...,50
     elif data_type == 9:
