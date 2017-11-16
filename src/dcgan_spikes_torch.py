@@ -117,55 +117,42 @@ elif opt.dataset == 'fake':
     dataset = dset.FakeData(image_size=(3, opt.imageSize, opt.imageSize),
                             transform=transforms.ToTensor())
 
-# Create dataset
+# Load datasets with type (step_rate | variability)
 else:
-    # Number of data samples
-    num_samples = 10
-    print('generating data')
+    print('loading data')
     t = time.time()
+    try:
+        fname = './logs/data/data_NS10000_IS64.npy'
+        data = np.load(fname).item()
+        binned_data = data['binned_data']
+    except (FileNotFoundError, KeyError):
+        fname = './logs/data/data_NS10000_IS64_type-step-rate.npy'
+        data = np.load(fname).item()
+        binned_data = data['binned_data']
+    print('done loading data, in sec: {}'.format(time.time() - t))
+    # Free space
+    del data
+    num_samples = len(binned_data)
     # Matrices to store, shape: samples x C x H x W
     # C: channels, H: height, W: width
-    binned_data = np.empty((num_samples, 1, opt.imageSize, opt.imageSize),
-                           dtype=np.float32)
     norm_data = np.empty((num_samples, 1, opt.imageSize, opt.imageSize),
                          dtype=np.float32)
-    for i in range(num_samples):
-        if opt.dataset == 'step_rate':
-            data = DataDistribution.poisson_nonstat_sample(t_stop=10000 * pq.ms,
-                                                           num_bins=64,
-                                                           num_sts=64)[
-                0].to_array().ravel()
-        elif opt.dataset == 'variability':
-            data = DataDistribution.gen_nonstat_sample(6, t=20000 * pq.ms,
-                                                       sample_period=10 * pq.ms,
-                                                       num_bins=64,
-                                                       num_sts=64)[
-                0].to_array().ravel()
-        # Reshape to required format
-        data = data.reshape((1, opt.imageSize, opt.imageSize))
-        binned_data[i] = data
+    for elem in binned_data:
         # Normalize data
         # TODO how to normalize binned data
-        data = np.divide(data, np.max(data))
-        # data = (data - data.mean()) / data.std()
-        norm_data[i] = data
-    print('done generating data, in sec: {}'.format(time.time() - t))
+        norm = np.divide(elem, np.max(elem))
+        # norm = (norm - norm.mean()) / norm.std()
+        norm_data[i] = norm
     # Convert list to float32
     tensor_all = torch.from_numpy(np.array(norm_data, dtype=np.float32))
     tensor_raw = torch.from_numpy(np.array(binned_data, dtype=np.float32))
     # preprocess(tensor_all)
     # Define targets as ones
+    # TODO try label smoothing, i.e. set labels e.g. to 0.9
     targets = torch.ones(num_samples)
     # Create dataset
     dataset = TensorDataset(tensor_all, targets)
     nc = 1
-    # Save raw data to save_dict
-    '''
-    1-dim: sample
-    2-dim: Channel (here only one) with binned data of shape 64x64
-    '''
-    save_dict['binned_data'] = binned_data
-    save_dict['num_samples'] = num_samples
 
     vutils.save_image(tensor_raw,
                       '{}/real_samples_normalized.png'.format(opt.outf),
