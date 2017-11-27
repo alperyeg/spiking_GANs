@@ -1,20 +1,22 @@
 import numpy as np
-import neo 
-import torch
+import os
 import time
 import quantities as pq
 import utils
 from data_generation import DataDistribution
 
 '''
-Supported data types are so far (step_rate | variability) 
+Supported data types are so far (step_rate | variability)
 '''
-data_type = 'variability'
+data_type = 'step_rate'
 
 # Number of data samples
 num_samples = 10000
 imageSize = 64
 save_dict = {}
+JOB_ID = int(os.environ['SLURM_JOB_ID'])
+ARRAY_ID = int(os.environ['SLURM_ARRAY_TASK_ID'])
+print(ARRAY_ID)
 print('generating data')
 t = time.time()
 # Matrices to store, shape: samples x C x H x W
@@ -28,6 +30,7 @@ for i in range(num_samples):
     if data_type == 'step_rate':
         data, spikes, _ = DataDistribution.poisson_nonstat_sample(
             t_stop=10000 * pq.ms,
+            rate2=ARRAY_ID * pq.ms,
             num_bins=64,
             num_sts=64)
     elif data_type == 'variability':
@@ -52,5 +55,4 @@ save_dict['num_samples'] = num_samples
 save_dict['imageSize'] = imageSize
 save_dict['spikes'] = raw_data
 save_dict['data_type'] = data_type
-utils.save_samples(save_dict, path='.', filename='data_NS{}_IS{}_type-{}.npy'.format(num_samples, 
-                                                                                     imageSize, data_type))
+utils.save_samples(save_dict, path='.', filename='data_NS{}_IS{}_type-{}_rate{}.npy'.format(num_samples, imageSize, data_type, ARRAY_ID))

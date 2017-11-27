@@ -3,7 +3,6 @@ import argparse
 import os
 import random
 import numpy as np
-import quantities as pq
 import torch
 import torch.nn as nn
 import torch.nn.parallel
@@ -20,13 +19,16 @@ import time
 from torch.utils.data import TensorDataset
 from torch.autograd import Variable
 from tensorboardX import SummaryWriter
-from data_generation import DataDistribution
+
+JOB_ID = int(os.environ['SLURM_JOB_ID'])
+ARRAY_ID = int(os.environ['SLURM_ARRAY_TASK_ID'])
+# ARRAY_ID = 12
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--dataset', required=False,
                     help='cifar10 | lsun | imagenet | folder | lfw | fake | '
                          'step_rate | variability',
-                    default='variability')
+                    default='step_rate')
 parser.add_argument('--dataroot', required=False, help='path to dataset')
 parser.add_argument('--workers', type=int,
                     help='number of data loading workers', default=2)
@@ -51,9 +53,9 @@ parser.add_argument('--netG', default='',
                     help="path to netG (to continue training)")
 parser.add_argument('--netD', default='',
                     help="path to netD (to continue training)")
-parser.add_argument('--outf', default='./logs/run_{}'.format(
-    datetime.datetime.now().strftime("%Y-%m-%d_%H-%M")),
-                    help='folder to output images and model checkpoints')
+parser.add_argument('--outf', default='./logs/run_{}_rate{}'.format(
+    datetime.datetime.now().strftime("%Y-%m-%d_%H-%M"), ARRAY_ID),
+    help='folder to output images and model checkpoints')
 parser.add_argument('--manualSeed', type=int, help='manual seed')
 
 opt = parser.parse_args()
@@ -122,27 +124,22 @@ else:
     print('loading data')
     t = time.time()
     try:
-        fname = './logs/data/data_NS10000_IS64.npy'
+        fname = './data_NS10000_IS64_type-step_rate_rate{}.npy'.format(
+            ARRAY_ID)
         data = np.load(fname).item()
         binned_data = data['binned_data']
+        norm_data = data['normed_data']
     except (FileNotFoundError, KeyError):
         fname = './logs/data/data_NS10000_IS64_type-step-rate.npy'
         data = np.load(fname).item()
         binned_data = data['binned_data']
+        norm_data = data['normed_data']
     print('done loading data, in sec: {}'.format(time.time() - t))
+    num_samples = len(binned_data)
+    # Save original binned data too
+    save_dict['binned_data'] = binned_data
     # Free space
     del data
-    num_samples = len(binned_data)
-    # Matrices to store, shape: samples x C x H x W
-    # C: channels, H: height, W: width
-    norm_data = np.empty((num_samples, 1, opt.imageSize, opt.imageSize),
-                         dtype=np.float32)
-    for elem in binned_data:
-        # Normalize data
-        # TODO how to normalize binned data
-        norm = np.divide(elem, np.max(elem))
-        # norm = (norm - norm.mean()) / norm.std()
-        norm_data[i] = norm
     # Convert list to float32
     tensor_all = torch.from_numpy(np.array(norm_data, dtype=np.float32))
     tensor_raw = torch.from_numpy(np.array(binned_data, dtype=np.float32))
@@ -266,7 +263,8 @@ criterion = nn.BCELoss()
 input_ = torch.FloatTensor(opt.batchSize, 1, opt.imageSize, opt.imageSize)
 noise = torch.FloatTensor(opt.batchSize, nz, 1, 1)
 # fixed_noise = torch.FloatTensor(opt.batchSize, nz, 1, 1).normal_(0, 1)
-fixed_noise = np.random.poisson(lam=2, size=(opt.batchSize, nz, 1, 1)).astype(np.float32)
+fixed_noise = np.random.poisson(lam=2, size=(
+    opt.batchSize, nz, 1, 1)).astype(np.float32)
 fixed_noise = torch.from_numpy(np.divide(fixed_noise, np.max(fixed_noise)))
 label = torch.FloatTensor(opt.batchSize)
 real_label = 1
@@ -325,7 +323,8 @@ for epoch in range(opt.niter):
         writer.add_histogram('histogram/D_x', output.data, epoch)
 
         # train with fake
-        noise = np.random.poisson(lam=2, size=(batch_size, nz, 1, 1)).astype(np.float32)
+        noise = np.random.poisson(lam=2, size=(
+            batch_size, nz, 1, 1)).astype(np.float32)
         noise = torch.from_numpy(np.divide(noise, noise.max()))
         noise.resize_(batch_size, nz, 1, 1)
         noisev = Variable(noise)
@@ -349,7 +348,6 @@ for epoch in range(opt.niter):
         writer.add_scalar('data/G_z1', D_G_z1, epoch)
         writer.add_histogram('histogram/G_z1', output.data, epoch)
 
-
         ############################
         # (2) Update G network: maximize log(D(G(z)))
         ###########################
@@ -367,7 +365,6 @@ for epoch in range(opt.niter):
         writer.add_scalar('data/errG', errG.data[0], epoch)
         writer.add_scalar('data/G_z2', D_G_z2, epoch)
         writer.add_histogram('histogram/G_z2', output.data, epoch)
-
 
         print(
             '[%d/%d][%d/%d] Loss_D: %.4f Loss_G: %.4f D(x): %.4f D(G(z)): %.4f / %.4f'
