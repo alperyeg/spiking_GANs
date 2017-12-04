@@ -20,9 +20,11 @@ from torch.utils.data import TensorDataset
 from torch.autograd import Variable
 from tensorboardX import SummaryWriter
 
-JOB_ID = int(os.environ['SLURM_JOB_ID'])
-ARRAY_ID = int(os.environ['SLURM_ARRAY_TASK_ID'])
-# ARRAY_ID = 12
+try:
+    JOB_ID = int(os.environ['SLURM_JOB_ID'])
+    ARRAY_ID = int(os.environ['SLURM_ARRAY_TASK_ID'])
+except KeyError:
+    ARRAY_ID = ''
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--dataset', required=False,
@@ -124,13 +126,14 @@ else:
     print('loading data')
     t = time.time()
     try:
-        fname = './data_NS10000_IS64_type-step_rate_rate{}.npy'.format(
-            ARRAY_ID)
+        fname = './logs/data/data_NS10000_IS64_type-{0}_rate{1}.npy'.format(
+            opt.dataset, ARRAY_ID)
         data = np.load(fname).item()
         binned_data = data['binned_data']
         norm_data = data['normed_data']
     except (FileNotFoundError, KeyError):
-        fname = './logs/data/data_NS10000_IS64_type-step-rate.npy'
+        fname = './logs/data/data_NS10000_IS64_type-{0}{1}.npy'.format(
+            opt.dataset, ARRAY_ID)
         data = np.load(fname).item()
         binned_data = data['binned_data']
         norm_data = data['normed_data']
