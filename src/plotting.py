@@ -4,13 +4,11 @@ import numpy as np
 
 from matplotlib import animation
 
-
 sns.set(color_codes=True, context='paper')
 cmap = sns.husl_palette(10, l=.4)
 
 
 class PlotDistribution(object):
-
     def __init__(self, data):
         self.data = data
 
@@ -217,7 +215,8 @@ def plot_mean_activity(epoch=-1, real_data_num=(-1, -1),
     max_xtick = max(ax.get_xlim()) - ax.get_xticks()[-1] + ax.get_xticks()[-2]
     max_ytick = max(ax.get_ylim())
     plt.text(x=max_xtick, y=max_ytick,
-             s="real sample: {0} \n fake sample: {1}".format(real_data_num, sample_num),
+             s="real sample: {0} \n fake sample: {1}".format(real_data_num,
+                                                             sample_num),
              ha='left')
     plt.legend()
     if save:
@@ -228,7 +227,8 @@ def plot_mean_activity(epoch=-1, real_data_num=(-1, -1),
 def plot_mean_histogram(epoch=-1, real_data_num=(-1, -1),
                         sample_num=(-1, -1, -1, -1), bins=32,
                         path='results.npy',
-                        hist_kwgs=None, save=False, figname='mean_histogram.pdf',
+                        hist_kwgs=None, save=False,
+                        figname='mean_histogram.pdf',
                         **kwargs):
     """
     Histogram of the averaged results
@@ -273,11 +273,14 @@ def plot_mean_histogram(epoch=-1, real_data_num=(-1, -1),
                      hist_kws=hist_kwgs, **kwargs)
     distp = sns.distplot(real_sample.mean(axis=0), label='real', bins=bins,
                          color='red', hist_kws=hist_kwgs, **kwargs)
-    max_xtick = max(distp.get_xlim()) - distp.get_xticks()[-1] + distp.get_xticks()[-2]
+    max_xtick = max(distp.get_xlim()) - distp.get_xticks()[-1] + \
+                distp.get_xticks()[-2]
     max_ytick = max(distp.get_ylim())
-    plt.title('Distribution of mean activity (epoch:{})'.format(epoch), fontsize=14)
+    plt.title('Distribution of mean activity (epoch:{})'.format(epoch),
+              fontsize=14)
     plt.text(x=max_xtick, y=max_ytick,
-             s="real sample: {0} \n fake sample: {1}".format(real_data_num, sample_num),
+             s="real sample: {0} \n fake sample: {1}".format(real_data_num,
+                                                             sample_num),
              ha='left')
     plt.legend()
     if save:
@@ -285,32 +288,101 @@ def plot_mean_histogram(epoch=-1, real_data_num=(-1, -1),
     plt.show()
 
 
-def plot_loss(path='results.npy', save=False, figname='loss.pdf', **kwargs):
+def plot_loss(path='results.npy', save=False, figname='loss.pdf',
+              y_scale='linear', **kwargs):
     """
     Plot the loss of the discriminator and generator
 
+    :param save: bool, To save a picture. Default is False
+    :param figname: string, Figurename to save with extension
+    :param y_scale: string, Scale of the y-axis. Default is linear
     :param path: string, Path to the results file
     :param kwargs: dictionary, additionally plot parameter
     """
-    # load data 
+    # load data
     data = np.load(path).item()
-    # get all errors 
+    # get all errors
     err_d = data['errD']
     err_g = data['errG']
     mean_d = []
     mean_g = []
+    std_d = []
+    std_g = []
     # loop over epochs
     for ep_d, ep_g in zip(err_d, err_g):
-        mean_d.append(np.array(ep_d[1:])[1:, 1].mean())
-        mean_g.append(np.array(ep_g[1:])[1:, 1].mean())
-    plt.plot(range(len(err_d)), mean_d, label='Discriminator', **kwargs)
-    plt.plot(range(len(err_g)), mean_g, label='Generator', **kwargs)
+        d = np.array(ep_d[1:])[1:, 1]
+        g = np.array(ep_g[1:])[1:, 1]
+        mean_d.append(d.mean())
+        mean_g.append(g.mean())
+        std_d.append(d.std())
+        std_g.append(g.std())
+    p1 = plt.plot(range(len(err_d)), mean_d, label='Discriminator', **kwargs)
+    p2 = plt.plot(range(len(err_g)), mean_g, label='Generator', **kwargs)
+    mean_d = np.array(mean_d)
+    mean_g = np.array(mean_g)
+    std_d = np.array(std_d)
+    std_g = np.array(std_g)
+    plt.fill_between(range(len(err_d)), mean_d + std_d, mean_d - std_d,
+                     alpha=0.2, color=p1[0].get_color())
+    plt.fill_between(range(len(err_d)), mean_g + std_g, mean_g - std_g,
+                     alpha=0.2, color=p2[0].get_color())
     plt.legend()
     plt.title('Training loss')
     plt.xlabel('Epochs')
     plt.ylabel('Loss values')
+    plt.yscale(y_scale)
     plt.xticks(range(len(err_g)))
     plt.xlim(xmax=(len(err_g) - 1))
     if save:
         plt.savefig(figname)
+    plt.show()
+
+
+def plot_all_loss(path='results.npy', save=False, figname='loss.pdf',
+                  y_scale='linear', **kwargs):
+    """
+    Plot the total loss of the discriminator and generator
+
+    :param save: bool, To save a picture. Default is False
+    :param figname: string, Figurename to save with extension
+    :param y_scale: string, Scale of the y-axis. Default is linear
+    :param path: string, Path to the results file
+    :param kwargs: dictionary, additionally plot parameter
+    """
+
+    # load data
+    data = np.load(path).item()
+    # get all errors
+    err_d = data['errD']
+    err_g = data['errG']
+    # to plot the mean activity
+    mean_d = []
+    mean_g = []
+    idxs = []
+    idx = 0
+    # loop over epochs
+    for ep_d, ep_g in zip(err_d, err_g):
+        d = np.array(ep_d[1:])[1:, 1]
+        g = np.array(ep_g[1:])[1:, 1]
+        plt.plot(range(idx, idx + len(d)), d, 'r', 
+                 label='Discriminator' if idx == 0 else "", **kwargs)
+        plt.plot(range(idx, idx + len(g)), g, 'b', 
+                 label='Generator' if idx == 0 else "", **kwargs)
+        mean_g.append(g.mean())
+        mean_d.append(d.mean())
+        idxs.append((idx + len(d) - idx) / 2 + idx)
+        idx += len(d)
+    plt.plot(idxs, mean_d, 'k')
+    plt.plot(idxs, mean_g, 'k')
+    plt.yscale(y_scale)
+    # set epochs as labels
+    plt.xticks(range(0, idx, len(err_d[0])), range(len(err_d)))
+    plt.legend()
+    plt.title('Training loss')
+    plt.xlabel('Epochs')
+    plt.ylabel('Loss values')
+    # plt.xlim(xmax=(len(err_g) - 1))
+    if save:
+        plt.savefig(figname)
+
     plt.show()
