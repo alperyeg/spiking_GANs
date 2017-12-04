@@ -364,9 +364,10 @@ def plot_all_loss(path='results.npy', save=False, figname='loss.pdf',
     for ep_d, ep_g in zip(err_d, err_g):
         d = np.array(ep_d[1:])[1:, 1]
         g = np.array(ep_g[1:])[1:, 1]
-        plt.plot(range(idx, idx + len(d)), d, 'r', label='Discriminator',
-                 **kwargs)
-        plt.plot(range(idx, idx + len(g)), g, 'b', label='Generator', **kwargs)
+        plt.plot(range(idx, idx + len(d)), d, 'r', 
+                 label='Discriminator' if idx == 0 else "", **kwargs)
+        plt.plot(range(idx, idx + len(g)), g, 'b', 
+                 label='Generator' if idx == 0 else "", **kwargs)
         mean_g.append(g.mean())
         mean_d.append(d.mean())
         idxs.append((idx + len(d) - idx) / 2 + idx)
@@ -376,7 +377,7 @@ def plot_all_loss(path='results.npy', save=False, figname='loss.pdf',
     plt.yscale(y_scale)
     # set epochs as labels
     plt.xticks(range(0, idx, len(err_d[0])), range(len(err_d)))
-    # plt.legend()
+    plt.legend()
     plt.title('Training loss')
     plt.xlabel('Epochs')
     plt.ylabel('Loss values')
