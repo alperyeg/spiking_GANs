@@ -203,14 +203,14 @@ def plot_mean_activity(epoch=-1, real_data_num=(-1, -1),
         for sn in sample_num:
             # load fake sample
             fake_sample = fakes[ep][sn[0]][sn[1]][sn[2]][sn[3]].numpy()
-            plt.plot(fake_sample.mean(axis=0), label='ep{}'.format(ep))
-    plt.plot(real_sample.mean(axis=0), label='real{}'.format(-1), color='red',
+            plt.plot(fake_sample.mean(axis=0))#, label='ep{}'.format(ep))
+    plt.plot(real_sample.mean(axis=0), label='real{}'.format(real_data_num[0]), color='red',
              lw=3)
     plt.xlim(0, len(real_sample))
     plt.xlabel('Bins', fontsize=14.)
     plt.ylabel('Counts', fontsize=14.)
     plt.xticks(range(0, len(real_sample), 5))
-    plt.title('Averaged activity', fontsize=14.)
+    plt.title('Averaged activity epoch {}'.format(ep), fontsize=14.)
     ax = plt.gca()
     max_xtick = max(ax.get_xlim()) - ax.get_xticks()[-1] + ax.get_xticks()[-2]
     max_ytick = max(ax.get_ylim())
@@ -218,9 +218,11 @@ def plot_mean_activity(epoch=-1, real_data_num=(-1, -1),
              s="real sample: {0} \n fake sample: {1}".format(real_data_num,
                                                              sample_num),
              ha='left')
+    plt.ylim(0, 0.5)
     plt.legend()
     if save:
         plt.savefig(figname)
+        plt.close()
     plt.show()
 
 

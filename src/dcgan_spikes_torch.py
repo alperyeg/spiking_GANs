@@ -24,7 +24,7 @@ try:
     JOB_ID = int(os.environ['SLURM_JOB_ID'])
     ARRAY_ID = int(os.environ['SLURM_ARRAY_TASK_ID'])
 except KeyError:
-    ARRAY_ID = ''
+    ARRAY_ID = 6
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--dataset', required=False,
@@ -136,6 +136,7 @@ else:
             opt.dataset, ARRAY_ID)
         data = np.load(fname).item()
         binned_data = data['binned_data']
+        # TODO normed data does not exist
         norm_data = data['normed_data']
     print('done loading data, in sec: {}'.format(time.time() - t))
     num_samples = len(binned_data)
