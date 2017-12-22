@@ -24,7 +24,7 @@ try:
     JOB_ID = int(os.environ['SLURM_JOB_ID'])
     ARRAY_ID = int(os.environ['SLURM_ARRAY_TASK_ID'])
 except KeyError:
-    ARRAY_ID = 6
+    ARRAY_ID = 9
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--dataset', required=False,
@@ -69,7 +69,7 @@ except OSError as ose:
     print(ose)
 
 if opt.manualSeed is None:
-    opt.manualSeed = 123
+    opt.manualSeed = np.random.randint(1, 10000)
 print("Random Seed: ", opt.manualSeed)
 random.seed(opt.manualSeed)
 torch.manual_seed(opt.manualSeed)
@@ -266,10 +266,13 @@ criterion = nn.BCELoss()
 
 input_ = torch.FloatTensor(opt.batchSize, 1, opt.imageSize, opt.imageSize)
 noise = torch.FloatTensor(opt.batchSize, nz, 1, 1)
+# generate a random normal distriubted matrix with range [0, 1]
 # fixed_noise = torch.FloatTensor(opt.batchSize, nz, 1, 1).normal_(0, 1)
-fixed_noise = np.random.poisson(lam=2, size=(
-    opt.batchSize, nz, 1, 1)).astype(np.float32)
-fixed_noise = torch.from_numpy(np.divide(fixed_noise, np.max(fixed_noise)))
+# fixed_noise = np.random.poisson(lam=2, size=(
+#    opt.batchSize, nz, 1, 1)).astype(np.float32)
+# fixed_noise = torch.from_numpy(np.divide(fixed_noise, np.max(fixed_noise)))
+# generate a uniform random matrix with range [0, 1]
+fixed_noise = torch.FloatTensor(opt.batchSize, nz, 1, 1).uniform_(0, 1)
 label = torch.FloatTensor(opt.batchSize)
 real_label = 1
 fake_label = 0
@@ -327,10 +330,11 @@ for epoch in range(opt.niter):
         writer.add_histogram('histogram/D_x', output.data, epoch)
 
         # train with fake
-        noise = np.random.poisson(lam=2, size=(
-            batch_size, nz, 1, 1)).astype(np.float32)
-        noise = torch.from_numpy(np.divide(noise, noise.max()))
-        noise.resize_(batch_size, nz, 1, 1)
+        # noise = torch.FloatTensor(opt.batchSize, nz, 1, 1).uniform_(0, 1)
+        # noise = np.random.poisson(lam=2, size=(
+        #     batch_size, nz, 1, 1)).astype(np.float32)
+        # noise = torch.from_numpy(np.divide(noise, noise.max()))
+        noise.resize_(batch_size, nz, 1, 1).uniform_(0, 1)
         noisev = Variable(noise)
         fake = netG(noisev)
         labelv = Variable(label.fill_(fake_label))
