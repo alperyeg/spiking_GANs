@@ -69,7 +69,7 @@ except OSError as ose:
     print(ose)
 
 if opt.manualSeed is None:
-    opt.manualSeed = np.random.randint(1, 10000)
+    opt.manualSeed = 123
 print("Random Seed: ", opt.manualSeed)
 random.seed(opt.manualSeed)
 torch.manual_seed(opt.manualSeed)
@@ -330,7 +330,6 @@ for epoch in range(opt.niter):
         writer.add_histogram('histogram/D_x', output.data, epoch)
 
         # train with fake
-        # noise = torch.FloatTensor(opt.batchSize, nz, 1, 1).uniform_(0, 1)
         # noise = np.random.poisson(lam=2, size=(
         #     batch_size, nz, 1, 1)).astype(np.float32)
         # noise = torch.from_numpy(np.divide(noise, noise.max()))
