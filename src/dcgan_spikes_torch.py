@@ -149,8 +149,8 @@ else:
     tensor_raw = torch.from_numpy(np.array(binned_data, dtype=np.float32))
     # preprocess(tensor_all)
     # Define targets as ones
-    # TODO try label smoothing, i.e. set labels e.g. to 0.9
-    targets = torch.ones(num_samples)
+    # label smoothing, i.e. set labels to 0.9
+    targets = torch.ones(num_samples) - 0.1
     # Create dataset
     dataset = TensorDataset(tensor_all, targets)
     nc = 1
@@ -226,7 +226,7 @@ class _net_D(nn.Module):
     def __init__(self, ngpu):
         super(_net_D, self).__init__()
         self.ngpu = ngpu
-        self.main = nn.Sequential(
+        self.netD_1 = nn.Sequential(
             # input is (nc) x 64 x 64
             nn.Conv2d(nc, ndf, 4, 2, 1, bias=False),
             nn.LeakyReLU(0.2, inplace=True),
@@ -242,6 +242,9 @@ class _net_D(nn.Module):
             nn.Conv2d(ndf * 4, ndf * 8, 4, 2, 1, bias=False),
             nn.BatchNorm2d(ndf * 8),
             nn.LeakyReLU(0.2, inplace=True),
+
+        )
+        self.netD_2 = nn.Sequential(
             # state size. (ndf*8) x 4 x 4
             nn.Conv2d(ndf * 8, 1, 4, 1, 0, bias=False),
             nn.Sigmoid()
@@ -249,11 +252,15 @@ class _net_D(nn.Module):
 
     def forward(self, inpt):
         if isinstance(inpt.data, torch.cuda.FloatTensor) and self.ngpu > 1:
-            out = nn.parallel.data_parallel(self.main, inpt, range(self.ngpu))
+            intermediate = nn.parallel.data_parallel(self.netD_1, inpt,
+                                                     range(self.ngpu))
+            out = nn.parallel.data_parallel(self.netD_2, self.netD_2,
+                                            range(self.ngpu))
         else:
-            out = self.main(inpt)
+            intermediate = self.netD_1(inpt)
+            out = self.netD_2(intermediate)
 
-        return out.view(-1, 1).squeeze(1)
+        return out.view(-1, 1).squeeze(1), intermediate
 
 
 netD = _net_D(ngpu)
@@ -262,7 +269,8 @@ if opt.netD != '':
     netD.load_state_dict(torch.load(opt.netD))
 print(netD)
 
-criterion = nn.BCELoss()
+criterionD = nn.BCELoss()
+criterionG = nn.MSELoss()
 
 input_ = torch.FloatTensor(opt.batchSize, 1, opt.imageSize, opt.imageSize)
 noise = torch.FloatTensor(opt.batchSize, nz, 1, 1)
@@ -274,13 +282,15 @@ noise = torch.FloatTensor(opt.batchSize, nz, 1, 1)
 # generate a uniform random matrix with range [0, 1]
 fixed_noise = torch.FloatTensor(opt.batchSize, nz, 1, 1).uniform_(0, 1)
 label = torch.FloatTensor(opt.batchSize)
-real_label = 1
+# label smoothing
+real_label = 0.9    # before 1.0
 fake_label = 0
 
 if opt.cuda:
     netD.cuda()
     netG.cuda()
-    criterion.cuda()
+    criterionD.cuda()
+    criterionG.cuda()
     input_, label = input_.cuda(), label.cuda()
     noise, fixed_noise = noise.cuda(), fixed_noise.cuda()
 
@@ -308,6 +318,7 @@ for epoch in range(opt.niter):
     for i, data in enumerate(dataloader, 0):
         ############################
         # (1) Update D network: maximize log(D(x)) + log(1 - D(G(z)))
+        # = > same as BCELoss
         ###########################
         # train with real
         netD.zero_grad()
@@ -320,8 +331,8 @@ for epoch in range(opt.niter):
         inputv = Variable(input_)
         labelv = Variable(label)
 
-        output = netD(inputv)
-        errD_real = criterion(output, labelv)
+        output, real_intermed = netD(inputv)
+        errD_real = criterionD(output, labelv)
         errD_real.backward()
         D_x = output.data.mean()
 
@@ -337,8 +348,8 @@ for epoch in range(opt.niter):
         noisev = Variable(noise)
         fake = netG(noisev)
         labelv = Variable(label.fill_(fake_label))
-        output = netD(fake.detach())
-        errD_fake = criterion(output, labelv)
+        output, _ = netD(fake.detach())
+        errD_fake = criterionD(output, labelv)
         errD_fake.backward()
         D_G_z1 = output.data.mean()
         errD = errD_real + errD_fake
@@ -361,8 +372,12 @@ for epoch in range(opt.niter):
         netG.zero_grad()
         labelv = Variable(
             label.fill_(real_label))  # fake labels are real for generator cost
-        output = netD(fake)
-        errG = criterion(output, labelv)
+        output, fake_intermed = netD(fake)
+        fake_intermed = torch.mean(fake_intermed, 0)
+        real_intermed = torch.mean(real_intermed, 0)
+        # feature matching loss, i.e. it measures the distance between the real
+        # and generated statistics by comparing intermediate layer activations
+        errG = criterionG(fake_intermed, real_intermed.detach())
         errG.backward()
         D_G_z2 = output.data.mean()
         optimizerG.step()
