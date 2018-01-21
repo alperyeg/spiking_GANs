@@ -223,6 +223,12 @@ print(netG)
 
 
 class _net_D(nn.Module):
+    """
+    Improved GAN - Salimans et al. 2016
+    https://arxiv.org/abs/1606.03498
+    Implemented feature matching and minibatch discrimination
+    """
+    # TODO make minibatch discr. and feature matching optional/functions
     def __init__(self, ngpu):
         super(_net_D, self).__init__()
         self.ngpu = ngpu
@@ -244,9 +250,14 @@ class _net_D(nn.Module):
             nn.LeakyReLU(0.2, inplace=True),
 
         )
+        # this values are for the tensor T (improved GAN)
+        self.n_B = 128
+        self.n_C = 16
+        # for the intermediate layer
+        # TODO try also with linear and fully connected layer
         self.netD_2 = nn.Sequential(
-            # state size. (ndf*8) x 4 x 4
-            nn.Conv2d(ndf * 8, 1, 4, 1, 0, bias=False),
+            # state size. (ndf*8) + n_c/2 x 4 x 4
+            nn.Conv2d(int(ndf * 8 + self.n_C / 2), 1, 4, 1, 0, bias=False),
             nn.Sigmoid()
         )
 
@@ -254,11 +265,32 @@ class _net_D(nn.Module):
         if isinstance(inpt.data, torch.cuda.FloatTensor) and self.ngpu > 1:
             intermediate = nn.parallel.data_parallel(self.netD_1, inpt,
                                                      range(self.ngpu))
-            out = nn.parallel.data_parallel(self.netD_2, self.netD_2,
+            out = nn.parallel.data_parallel(self.netD_2, self.netD_1,
                                             range(self.ngpu))
         else:
+            # minibatch discrimination
+            # create Tensor T (trainable)
+            t_tensor_init = torch.rand(ndf * 8 * 4 * 4, self.n_B * self.n_C) * 0.1
+            t_tensor = nn.Parameter(t_tensor_init, requires_grad=True)
             intermediate = self.netD_1(inpt)
-            out = self.netD_2(intermediate)
+            intermed = intermediate.view(-1, ndf * 8 * 4 * 4)
+            # calculate the matrix M
+            ms = intermed.mm(t_tensor)
+            ms = ms.view(-1, self.n_B, self.n_C)
+            out_tensor = []
+            for ii in range(ms.size()[0]):
+                out_i = None
+                for jj in range(ms.size()[0]):
+                    o_i = torch.sum(torch.abs(ms[ii, :, :] - ms[jj, :, :]), 1)
+                    o_i = torch.exp(-o_i)
+                    if out_i is None:
+                        out_i = o_i
+                    else:
+                        out_i = out_i + o_i
+                out_tensor.append(out_i)
+            out_t = torch.cat(tuple(out_tensor)).view(ms.size()[0], self.n_B)
+            out = torch.cat((intermed, out_t), 1).view(ms.size(0), -1, 4, 4)
+            out = self.netD_2(out)
 
         return out.view(-1, 1).squeeze(1), intermediate
 
