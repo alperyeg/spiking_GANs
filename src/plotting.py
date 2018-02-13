@@ -188,7 +188,7 @@ def plot_mean_activity(epoch=-1, real_data_num=(-1, -1),
 
     :param path: Path and filename of the results
     """
-    if not isinstance(epoch, list):
+    if not isinstance(epoch, range):
         epoch = [epoch]
     if not isinstance(sample_num, list):
         sample_num = [sample_num]
