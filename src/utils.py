@@ -56,3 +56,48 @@ def convert_to_spiketrains(binned_data, binsize, rho, units='ms'):
                                         units=units)
         spiketrains.append(neo_spiketrain)
     return spiketrains
+
+
+def encode_input(spiketrains, rows, columns, dt):
+    # TODO more documentation, optimize?
+    """
+    Encodes a matrix for given list of `spiketrains`
+    :param spiketrains: list of spiketrains
+    :param rows: Size of the rows of matrix `M`
+    :param columns: Size of the columns of matrix `M`
+    :param dt: Time resolution
+    :return: Matrix `M` and the last spike index for each spiketrains
+    """
+    M = np.zeros((rows, columns))
+    spike_index = []
+    for i, spk in enumerate(spiketrains):
+        s = 0
+        # intermediate result
+        res = 0
+        steps = 0
+        for j in range(columns):
+            if s < len(spk):
+                if j == 0:
+                    res = spk[s]
+                    M[i, j] = res
+                    s += 1
+                    steps = dt
+                else:
+                    # copy if smaller
+                    if res + steps < spk[s]:
+                        M[i, j] = res
+                        steps += dt
+                    else:
+                        # check for refractory period violation
+                        if spk[s] - res >= dt:
+                            M[i, j] = spk[s]
+                            res = spk[s]
+                            steps = dt
+                        else:
+                            M[i, j] = res
+                            steps += dt
+                        s += 1
+            else:
+                M[i, j] = res
+        spike_index.append(s)
+    return M, spike_index
