@@ -58,30 +58,44 @@ def convert_to_spiketrains(binned_data, binsize, rho, units='ms'):
     return spiketrains
 
 
-def encode_input(spiketrains, rows, columns, dt):
-    # TODO more documentation, optimize?
+def encode_input(spiketrains, rows, columns, dt=1 * pq.ms, refrac=2 * pq.ms):
+    # TODO more documentation
+    # TODO optimize?
     """
     Encodes a matrix for given list of `spiketrains`
+    :param refrac: quantity object: min refractory period
     :param spiketrains: list of spiketrains
     :param rows: Size of the rows of matrix `M`
     :param columns: Size of the columns of matrix `M`
-    :param dt: Time resolution
-    :return: Matrix `M` and the last spike index for each spiketrains
+    :param dt: quantity object: Time resolution of the step to go
+    :return: Encoded matrix `M`
     """
     M = np.zeros((rows, columns))
-    spike_index = []
+    if not isinstance(dt, pq.Quantity):
+        raise ValueError("dt must be a Quantity object")
+    else:
+        dt = dt.rescale(spiketrains[0].units)
+    refrac = refrac.rescale(dt.units)
+    dt = float(dt.magnitude)
+    refrac = float(refrac.magnitude)
+    t_start = float(spiketrains[0].t_start.magnitude)
     for i, spk in enumerate(spiketrains):
         s = 0
+        spk = spk.magnitude
         # intermediate result
         res = 0
-        steps = 0
+        steps = dt
         for j in range(columns):
             if s < len(spk):
                 if j == 0:
-                    res = spk[s]
+                    if t_start + dt >= spk[s]:
+                        res = spk[s]
+                        s += 1
+                    else:
+                        res = t_start
                     M[i, j] = res
-                    s += 1
-                    steps = dt
+                    # s += 1
+                    steps += dt
                 else:
                     # copy if smaller
                     if res + steps < spk[s]:
@@ -89,7 +103,7 @@ def encode_input(spiketrains, rows, columns, dt):
                         steps += dt
                     else:
                         # check for refractory period violation
-                        if spk[s] - res >= dt:
+                        if spk[s] - res >= refrac:
                             M[i, j] = spk[s]
                             res = spk[s]
                             steps = dt
@@ -99,5 +113,33 @@ def encode_input(spiketrains, rows, columns, dt):
                         s += 1
             else:
                 M[i, j] = res
-        spike_index.append(s)
-    return M, spike_index
+    return M
+
+
+def encoder(spiketrains, cols, dt):
+    # TODO type of sliding window, atm not sliding, rather jumping
+    # TODO add possibility to calculate dt: cols/max_spike
+    """
+    Encodes the input for a given set of spiketrains, via sliding window
+    :param spiketrains: neo.SpikeTrain objects
+    :param cols: number of columns for the matrix 
+    :param dt: time resolution
+    :return: ms: list of encoded matrices, shape: `[windows, len(spiketrains),
+    cols]`, where `windows` is the number of windows to cover all spikes with
+    for `cols` size
+    """
+    # get row of matrix
+    rows = len(spiketrains)
+    # max_spike = max(max(spks, key=max))
+    # get index of longest spiketrain
+    m = spiketrains.index(max(spiketrains, key=len))
+    longest_spiketrain = len(spiketrains[m])
+    # how many windows in total
+    windows = int(
+        np.ceil(
+            longest_spiketrain / (cols * dt.rescale(spiketrains[0].units))))
+    en = encode_input(spiketrains, rows, windows * cols, dt)
+    # store all encoded inputs
+    ms = []
+    [ms.append(en[:, w * cols:cols * (w + 1)]) for w in range(windows)]
+    return ms
