@@ -3,8 +3,10 @@ import os
 import time
 import quantities as pq
 import utils
-from data_generation import DataDistribution
 import argparse
+from data_generation import DataDistribution
+from utils import encoder
+
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--data_type', required=False, type=str,
@@ -13,13 +15,15 @@ parser.add_argument('--data_type', required=False, type=str,
 parser.add_argument('--encoding', required=False, type=str,
                     help='if input should be enocded',
                     default=False)
+parser.add_argument('--generate', required=True, type=bool,
+                    help='if the data should be generated',
+                    default=True)
 
 opt = parser.parse_args()
 
 '''
 Supported data types are so far (step_rate | variability)
 '''
-data_type = opt.data_type
 
 # Number of data samples
 num_samples = 10000
@@ -37,27 +41,41 @@ binned_data = np.empty((num_samples, 1, imageSize, imageSize),
 norm_data = np.empty((num_samples, 1, imageSize, imageSize),
                      dtype=np.float32)
 raw_data = []
-for i in range(num_samples):
+
+
+def generate_data(data_type, encode=False):
     if data_type == 'step_rate':
-        data, spikes, _ = DataDistribution.poisson_nonstat_sample(
+        dat, spks, _ = DataDistribution.poisson_nonstat_sample(
             t_stop=10000 * pq.ms,
             rate2=ARRAY_ID * pq.ms,
             num_bins=64,
-            num_sts=64)
+            num_sts=64,
+            binned=(not encode))
     elif data_type == 'variability':
-        data, spikes = DataDistribution.gen_nonstat_sample(6, t=10000 * pq.ms,
-                                                           sample_period=10 * pq.ms,
-                                                           num_bins=64,
-                                                           num_sts=64)
-    data = data.to_array().ravel()
-    raw_data.append(spikes)
+        dat, spks = DataDistribution.gen_nonstat_sample(6, t=10000 * pq.ms,
+                                                        sample_period=10 * pq.ms,
+                                                        num_bins=64,
+                                                        num_sts=64,
+                                                        binned=(not encode))
+    # TODO encode and return the data
+    # TODO cast encoded data to numpy and save the whole result in numpy
+    dat = dat.to_array().ravel()
+    raw_data.append(spks)
     # Reshape to required format
-    data = data.reshape((1, imageSize, imageSize))
-    binned_data[i] = data
+    dat = dat.reshape((1, imageSize, imageSize))
+    binned_data[i] = dat
     # Normalize data
-    data = np.divide(data, np.max(data))
+    dat = np.divide(dat, np.max(dat))
     # data = (data - data.mean()) / data.std()
-    norm_data[i] = data
+    norm_data[i] = dat
+
+
+for i in range(num_samples):
+    if opt.generate:
+        generate_data(data_type=opt.data_type)
+    else:
+        # TODO load data
+        pass
 print('done generating data, in sec: {}'.format(time.time() - t))
 
 save_dict['binned_data'] = binned_data
@@ -65,5 +83,6 @@ save_dict['normed_data'] = norm_data
 save_dict['num_samples'] = num_samples
 save_dict['imageSize'] = imageSize
 save_dict['spikes'] = raw_data
-save_dict['data_type'] = data_type
-utils.save_samples(save_dict, path='.', filename='data_NS{}_IS{}_type-{}_rate{}.npy'.format(num_samples, imageSize, data_type, ARRAY_ID))
+save_dict['data_type'] = opt.data_type
+utils.save_samples(save_dict, path='.',
+                   filename='data_NS{}_IS{}_type-{}_rate{}.npy'.format(num_samples, imageSize, opt.data_type, ARRAY_ID))
