@@ -121,6 +121,7 @@ def encoder(spiketrains, cols, dt):
     # TODO add possibility to calculate dt: cols/max_spike
     """
     Encodes the input for a given set of spiketrains, via sliding window
+
     :param spiketrains: neo.SpikeTrain objects
     :param cols: number of columns for the matrix 
     :param dt: time resolution

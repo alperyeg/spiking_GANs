@@ -4,11 +4,22 @@ import time
 import quantities as pq
 import utils
 from data_generation import DataDistribution
+import argparse
+
+parser = argparse.ArgumentParser()
+parser.add_argument('--data_type', required=False, type=str,
+                    help='kind of rate (step_rate | variability)',
+                    default='step_rate')
+parser.add_argument('--encoding', required=False, type=str,
+                    help='if input should be enocded',
+                    default=False)
+
+opt = parser.parse_args()
 
 '''
 Supported data types are so far (step_rate | variability)
 '''
-data_type = 'step_rate'
+data_type = opt.data_type
 
 # Number of data samples
 num_samples = 10000
