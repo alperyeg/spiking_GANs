@@ -99,7 +99,9 @@ class DataDistribution(object):
         :param binned: bool If the spike trains should be binned
         :param num_bins: int Number of bins
         :param num_sts: int Number of spike trains
-        :return: binned spiketrains, corresponding spikes, and the rate signal
+        :return: if `binned` is **True** returns binned spiketrains,
+            corresponding spikes, and the rate signal, if `binned` is
+            **False** returns only spikes
         """
         t1 = 2 * t_stop
         rate_profile = [rate1 for _ in range(int(t_stop / dt))] + [rate2 for _ in range(
