@@ -26,7 +26,7 @@ Supported data types are so far (step_rate | variability)
 '''
 
 # Number of data samples
-num_samples = 1000
+num_samples = 10000
 imageSize = 64
 save_dict = {}
 try:
@@ -112,6 +112,6 @@ else:
     save_dict['spikes'] = raw_data
     save_dict['data_type'] = opt.data_type
 utils.save_samples(save_dict, path='.',
-                   filename='data_NS{}_IS{}_type-{}_encoded{}_rate{}.npy'.format(
-                       num_samples, imageSize, opt.encoding, opt.data_type,
+                   filename='data_NS{}_IS{}_type-{}_encoded-{}_rate{}.npy'.format(
+                       num_samples, imageSize, opt.data_type, opt.encoding,
                        ARRAY_ID))
