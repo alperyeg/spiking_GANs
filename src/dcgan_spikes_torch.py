@@ -24,7 +24,7 @@ try:
     JOB_ID = int(os.environ['SLURM_JOB_ID'])
     ARRAY_ID = int(os.environ['SLURM_ARRAY_TASK_ID'])
 except KeyError:
-    ARRAY_ID = 9
+    ARRAY_ID = 10
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--dataset', required=False,
@@ -59,6 +59,9 @@ parser.add_argument('--outf', default='./logs/run_{}_rate{}'.format(
     datetime.datetime.now().strftime("%Y-%m-%d_%H-%M"), ARRAY_ID),
     help='folder to output images and model checkpoints')
 parser.add_argument('--manualSeed', type=int, help='manual seed')
+parser.add_argument('--encoding', type=bool, help='load encoded data',
+                    default=False)
+
 
 opt = parser.parse_args()
 print(opt)
@@ -87,6 +90,55 @@ writer = SummaryWriter(log_dir=os.path.join(opt.outf, 'tensorboard'))
 if torch.cuda.is_available() and not opt.cuda:
     print(
         "WARNING: You have a CUDA device, so you should probably run with --cuda")
+
+
+# loading routines
+def load_data(dataset_name, encoding=False, array_id=10):
+    t = time.time()
+    if encoding:
+        try:
+            fname = './logs/data/data_NS10000_IS64_type-{}_encoded-{}_rate{}.npy'.format(
+                dataset_name, encoding, array_id)
+        except (KeyError, FileNotFoundError):
+            fname = './logs/data/data_NS10000_IS64_type-step_rate_encoded-True_rate10.npy'
+        data = np.load(fname).item()
+        norm_data = data['normed_data']
+        num_samples = len(norm_data)
+        encoded_data = data['encoded_data']
+        # Convert list to float32
+        tensor_all = torch.from_numpy(
+            np.array(norm_data, dtype=np.float32))
+        raw_tensor = torch.from_numpy(
+            np.array(encoded_data, dtype=np.float32).reshape(num_samples, 1,
+                                                             opt.imageSize,
+                                                             opt.imageSize))
+        save_dict['encoded_data'] = encoded_data
+    else:
+        try:
+            fname = './logs/data/data_NS10000_IS64_type-{0}_rate{1}.npy'.format(
+                dataset_name, array_id)
+        except (FileNotFoundError, KeyError):
+            fname = './logs/data/data_NS10000_IS64_type-{0}{1}.npy'.format(
+                dataset_name, array_id)
+        data = np.load(fname).item()
+        binned_data = data['binned_data']
+        norm_data = data['normed_data']
+        num_samples = len(binned_data)
+        # Save original binned data too
+        save_dict['binned_data'] = binned_data
+        # Convert list to float32
+        tensor_all = torch.from_numpy(np.array(norm_data, dtype=np.float32))
+        raw_tensor = torch.from_numpy(np.array(binned_data, dtype=np.float32))
+    # Free space
+    del data
+    # preprocess(tensor_all)
+    # Define targets as ones
+    # label smoothing, i.e. set labels to 0.9
+    targets = torch.ones(num_samples) - 0.1
+    # Create dataset
+    ds = TensorDataset(tensor_all, targets)
+    return ds, raw_tensor
+
 
 if opt.dataset in ['imagenet', 'folder', 'lfw']:
     # folder dataset
@@ -125,34 +177,10 @@ elif opt.dataset == 'fake':
 else:
     print('loading data')
     t = time.time()
-    try:
-        fname = './logs/data/data_NS10000_IS64_type-{0}_rate{1}.npy'.format(
-            opt.dataset, ARRAY_ID)
-        data = np.load(fname).item()
-        binned_data = data['binned_data']
-        norm_data = data['normed_data']
-    except (FileNotFoundError, KeyError):
-        fname = './logs/data/data_NS10000_IS64_type-{0}{1}.npy'.format(
-            opt.dataset, ARRAY_ID)
-        data = np.load(fname).item()
-        binned_data = data['binned_data']
-        # TODO normed data does not exist
-        norm_data = data['normed_data']
+    dataset, tensor_raw = load_data(dataset_name=opt.dataset,
+                                    encoding=opt.encoding,
+                                    array_id=ARRAY_ID)
     print('done loading data, in sec: {}'.format(time.time() - t))
-    num_samples = len(binned_data)
-    # Save original binned data too
-    save_dict['binned_data'] = binned_data
-    # Free space
-    del data
-    # Convert list to float32
-    tensor_all = torch.from_numpy(np.array(norm_data, dtype=np.float32))
-    tensor_raw = torch.from_numpy(np.array(binned_data, dtype=np.float32))
-    # preprocess(tensor_all)
-    # Define targets as ones
-    # label smoothing, i.e. set labels to 0.9
-    targets = torch.ones(num_samples) - 0.1
-    # Create dataset
-    dataset = TensorDataset(tensor_all, targets)
     nc = 1
 
     vutils.save_image(tensor_raw,
