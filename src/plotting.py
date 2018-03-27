@@ -164,12 +164,14 @@ def save_animation(path, anim_frames, **kwargs):
     anim.save(path + 'anim.mp4', writer=writer)
 
 
-def plot_mean_activity(epoch=-1, real_data_num=(-1, -1),
+def plot_mean_activity(data_scheme='binned_data',
+                       epoch=-1, real_data_num=(-1, -1),
                        sample_num=(-1, -1, -1, -1), path='results.npy',
                        save=False, figname='mean_activity.pdf'):
     """
     Mean activity of the results
 
+    :param data_scheme: string, binned or encoded
     :param epoch: int, epoch number to be considered
     :param real_data_num: tuple or list of tuples
         1-dim: sample
@@ -185,9 +187,42 @@ def plot_mean_activity(epoch=-1, real_data_num=(-1, -1),
         4-dim: 64 samples x
             Channel number (here always only 1) x
             64x64 normalized binned data
-
+    :param save, bool, if the results should be saved
     :param path: Path and filename of the results
+    :param figname: string, name of the figure to be saved
     """
+    if data_scheme == 'binned_data':
+        fig, ax, lrs = _plot_mean_activity_binned(epoch, real_data_num,
+                                                  sample_num, path)
+    elif data_scheme == 'encoded_data':
+        fig, ax, lrs = _plot_mean_activity_encoded(epoch, real_data_num,
+                                                   sample_num, path)
+    else:
+        raise ValueError('Unknown data scheme')
+    ax.set_xlim(0, lrs)
+    ax.set_xlabel('Bins', fontsize=14.)
+    ax.set_ylabel('Counts', fontsize=14.)
+    ax.set_xticks(range(0, lrs, 5))
+    ax.set_title('Averaged activity epoch {}'.format(epoch), fontsize=14.)
+    axs = plt.gca()
+    max_xtick = max(axs.get_xlim()) - axs.get_xticks()[-1] + axs.get_xticks()[
+        -2]
+    max_ytick = max(axs.get_ylim())
+    fig.text(x=max_xtick, y=max_ytick,
+             s="real sample: {0} \n fake sample: {1}".format(real_data_num,
+                                                             sample_num),
+             ha='left')
+    ax.set_ylim(0, 0.5)
+    ax.legend()
+    if save:
+        fig.savefig(figname)
+        fig.clf()
+    fig.show()
+
+
+def _plot_mean_activity_binned(epoch=-1, real_data_num=(-1, -1),
+                               sample_num=(-1, -1, -1, -1),
+                               path='results.npy'):
     if not isinstance(epoch, range):
         epoch = [epoch]
     if not isinstance(sample_num, list):
@@ -199,34 +234,43 @@ def plot_mean_activity(epoch=-1, real_data_num=(-1, -1),
     fakes = data['fake_data']
     real_sample = reals[real_data_num[0]][real_data_num[1]]
     real_sample /= real_sample.max()
+    fig, ax = plt.subplots()
     for ep in epoch:
         for sn in sample_num:
             # load fake sample
             fake_sample = fakes[ep][sn[0]][sn[1]][sn[2]][sn[3]].numpy()
-            plt.plot(fake_sample.mean(axis=0))#, label='ep{}'.format(ep))
-    plt.plot(real_sample.mean(axis=0), label='real{}'.format(real_data_num[0]), color='red',
-             lw=3)
-    plt.xlim(0, len(real_sample))
-    plt.xlabel('Bins', fontsize=14.)
-    plt.ylabel('Counts', fontsize=14.)
-    plt.xticks(range(0, len(real_sample), 5))
-    plt.title('Averaged activity epoch {}'.format(ep), fontsize=14.)
-    ax = plt.gca()
-    max_xtick = max(ax.get_xlim()) - ax.get_xticks()[-1] + ax.get_xticks()[-2]
-    max_ytick = max(ax.get_ylim())
-    plt.text(x=max_xtick, y=max_ytick,
-             s="real sample: {0} \n fake sample: {1}".format(real_data_num,
-                                                             sample_num),
-             ha='left')
-    plt.ylim(0, 0.5)
-    plt.legend()
-    if save:
-        plt.savefig(figname)
-        plt.close()
-    plt.show()
+            ax.plot(fake_sample.mean(axis=0))  # , label='ep{}'.format(ep))
+    ax.plot(real_sample.mean(axis=0), label='real{}'.format(real_data_num[0]),
+            color='red', lw=3)
+    return fig, ax, len(real_sample)
 
 
-def plot_mean_histogram(epoch=-1, real_data_num=(-1, -1),
+def _plot_mean_activity_encoded(epoch=-1, real_data_num=(-1, -1),
+                                sample_num=(-1, -1, -1, -1),
+                                path='results.npy'):
+    if not isinstance(epoch, range):
+        epoch = [epoch]
+    if not isinstance(sample_num, list):
+        sample_num = [sample_num]
+    # load all data
+    data = np.load(path).item()
+    # load real data
+    reals = data['encoded_data']
+    fakes = data['fake_data']
+    real_sample = reals[real_data_num[0]][real_data_num[1]]
+    fig, ax = plt.subplots()
+    for ep in epoch:
+        for sn in sample_num:
+            # load fake sample
+            fake_sample = fakes[ep][sn[0]][sn[1]][sn[2]][sn[3]].numpy()
+            ax.plot(fake_sample.mean(axis=0))
+    ax.plot(real_sample.mean(axis=0), label='real{}'.format(real_data_num[0]),
+            color='red', lw=3)
+    return fig, ax, len(real_sample)
+
+
+def plot_mean_histogram(data_scheme='binned_data',
+                        epoch=-1, real_data_num=(-1, -1),
                         sample_num=(-1, -1, -1, -1), bins=32,
                         path='results.npy',
                         hist_kwgs=None, save=False,
@@ -235,7 +279,7 @@ def plot_mean_histogram(epoch=-1, real_data_num=(-1, -1),
     """
     Histogram of the averaged results
 
-
+    :param data_scheme: string, binned or encoded
     :param epoch: int, epoch number to be considered
     :param real_data_num: tuple
         1-dim: sample
@@ -253,11 +297,41 @@ def plot_mean_histogram(epoch=-1, real_data_num=(-1, -1),
             64x64 normalized binned data
     :param bins: int, number of bins for the histogram
     :param path: Path and filename of the results
+    :param figname: string, name of the figure to be saved
     :param hist_kwgs: histogram keywords which are passed on to the histogram
         function used by s seaborns `distplot` (dictionary, optional)
     :param kwargs: key word arguments for seaborns `distplot`
         (dictionary, optional)
+    :param save, bool, if the results should be saved
     """
+    if not isinstance(sample_num, list):
+        sample_num = [sample_num]
+    if data_scheme == 'binned_data':
+        distp = _plot_mean_histogram_binned(epoch, real_data_num, sample_num,
+                                            bins, path, hist_kwgs, **kwargs)
+    elif data_scheme == 'encoded_data':
+        distp = _plot_mean_histogram_encoded(epoch, real_data_num[0],
+                                             sample_num,
+                                             bins, path, hist_kwgs, **kwargs)
+    else:
+        raise ValueError('Unknown data scheme')
+    max_xtick = max(distp.get_xlim()) - distp.get_xticks()[-1] + \
+                distp.get_xticks()[-2]
+    max_ytick = max(distp.get_ylim())
+    plt.title('Distribution of mean activity (epoch:{})'.format(epoch),
+              fontsize=14)
+    plt.text(x=max_xtick, y=max_ytick,
+             s="real sample: {0} \n fake sample: {1}".format(real_data_num,
+                                                             sample_num),
+             ha='left')
+    plt.legend()
+    if save:
+        plt.savefig(figname)
+    plt.show()
+
+
+def _plot_mean_histogram_binned(epoch, real_data_num, sample_num, bins, path,
+                                hist_kwgs, **kwargs):
     if not isinstance(sample_num, list):
         sample_num = [sample_num]
     # load all data
@@ -275,19 +349,28 @@ def plot_mean_histogram(epoch=-1, real_data_num=(-1, -1),
                      hist_kws=hist_kwgs, **kwargs)
     distp = sns.distplot(real_sample.mean(axis=0), label='real', bins=bins,
                          color='red', hist_kws=hist_kwgs, **kwargs)
-    max_xtick = max(distp.get_xlim()) - distp.get_xticks()[-1] + \
-                distp.get_xticks()[-2]
-    max_ytick = max(distp.get_ylim())
-    plt.title('Distribution of mean activity (epoch:{})'.format(epoch),
-              fontsize=14)
-    plt.text(x=max_xtick, y=max_ytick,
-             s="real sample: {0} \n fake sample: {1}".format(real_data_num,
-                                                             sample_num),
-             ha='left')
-    plt.legend()
-    if save:
-        plt.savefig(figname)
-    plt.show()
+    return distp
+
+
+def _plot_mean_histogram_encoded(epoch, real_data_num, sample_num, bins, path,
+                                 hist_kwgs, **kwargs):
+    if not isinstance(sample_num, list):
+        sample_num = [sample_num]
+    # load all data
+    data = np.load(path).item()
+    # load real data
+    reals = data['encoded_data']
+    fakes = data['fake_data']
+    real_sample = reals[real_data_num]
+    if epoch == -1:
+        epoch = len(fakes) - 1
+    for sn in sample_num:
+        fake_sample = fakes[epoch][sn[0]][sn[1]][sn[2]][sn[3]].numpy()
+        sns.distplot(fake_sample.mean(axis=0).ravel() * 6, label='fake',
+                     bins=bins, hist_kws=hist_kwgs, **kwargs)
+    distp = sns.distplot(real_sample.mean(axis=0), label='real', bins=bins,
+                         color='red', hist_kws=hist_kwgs, **kwargs)
+    return distp
 
 
 def plot_loss(path='results.npy', save=False, figname='loss.pdf',
@@ -366,9 +449,9 @@ def plot_all_loss(path='results.npy', save=False, figname='loss.pdf',
     for ep_d, ep_g in zip(err_d, err_g):
         d = np.array(ep_d[1:])[1:, 1]
         g = np.array(ep_g[1:])[1:, 1]
-        plt.plot(range(idx, idx + len(d)), d, 'r', 
+        plt.plot(range(idx, idx + len(d)), d, 'r',
                  label='Discriminator' if idx == 0 else "", **kwargs)
-        plt.plot(range(idx, idx + len(g)), g, 'b', 
+        plt.plot(range(idx, idx + len(g)), g, 'b',
                  label='Generator' if idx == 0 else "", **kwargs)
         mean_g.append(g.mean())
         mean_d.append(d.mean())
