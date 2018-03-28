@@ -171,7 +171,7 @@ def plot_mean_activity(data_scheme='binned_data',
     """
     Mean activity of the results
 
-    :param data_scheme: string, binned or encoded
+    :param data_scheme: string, `binned_data` or `encoded_data`
     :param epoch: int, epoch number to be considered
     :param real_data_num: tuple or list of tuples
         1-dim: sample
@@ -271,7 +271,7 @@ def _plot_mean_activity_encoded(epoch=-1, real_data_num=(-1, -1),
 
 def plot_mean_histogram(data_scheme='binned_data',
                         epoch=-1, real_data_num=(-1, -1),
-                        sample_num=(-1, -1, -1, -1), bins=32,
+                        sample_num=(-1, -1, -1, -1), bins=32, rho=6.0,
                         path='results.npy',
                         hist_kwgs=None, save=False,
                         figname='mean_histogram.pdf',
@@ -279,7 +279,7 @@ def plot_mean_histogram(data_scheme='binned_data',
     """
     Histogram of the averaged results
 
-    :param data_scheme: string, binned or encoded
+    :param data_scheme: string, `binned_data` or `encoded_data`
     :param epoch: int, epoch number to be considered
     :param real_data_num: tuple
         1-dim: sample
@@ -299,8 +299,8 @@ def plot_mean_histogram(data_scheme='binned_data',
     :param path: Path and filename of the results
     :param figname: string, name of the figure to be saved
     :param hist_kwgs: histogram keywords which are passed on to the histogram
-        function used by s seaborns `distplot` (dictionary, optional)
-    :param kwargs: key word arguments for seaborns `distplot`
+        function used by seaborn's `distplot` (dictionary, optional)
+    :param kwargs: key word arguments for seaborn's `distplot`
         (dictionary, optional)
     :param save, bool, if the results should be saved
     """
@@ -311,8 +311,8 @@ def plot_mean_histogram(data_scheme='binned_data',
                                             bins, path, hist_kwgs, **kwargs)
     elif data_scheme == 'encoded_data':
         distp = _plot_mean_histogram_encoded(epoch, real_data_num[0],
-                                             sample_num,
-                                             bins, path, hist_kwgs, **kwargs)
+                                             sample_num, bins, rho, path,
+                                             hist_kwgs, **kwargs)
     else:
         raise ValueError('Unknown data scheme')
     max_xtick = max(distp.get_xlim()) - distp.get_xticks()[-1] + \
@@ -332,8 +332,6 @@ def plot_mean_histogram(data_scheme='binned_data',
 
 def _plot_mean_histogram_binned(epoch, real_data_num, sample_num, bins, path,
                                 hist_kwgs, **kwargs):
-    if not isinstance(sample_num, list):
-        sample_num = [sample_num]
     # load all data
     data = np.load(path).item()
     # load real data
@@ -353,9 +351,7 @@ def _plot_mean_histogram_binned(epoch, real_data_num, sample_num, bins, path,
 
 
 def _plot_mean_histogram_encoded(epoch, real_data_num, sample_num, bins, path,
-                                 hist_kwgs, **kwargs):
-    if not isinstance(sample_num, list):
-        sample_num = [sample_num]
+                                 rho, hist_kwgs, **kwargs):
     # load all data
     data = np.load(path).item()
     # load real data
@@ -366,7 +362,7 @@ def _plot_mean_histogram_encoded(epoch, real_data_num, sample_num, bins, path,
         epoch = len(fakes) - 1
     for sn in sample_num:
         fake_sample = fakes[epoch][sn[0]][sn[1]][sn[2]][sn[3]].numpy()
-        sns.distplot(fake_sample.mean(axis=0).ravel() * 6, label='fake',
+        sns.distplot(fake_sample.mean(axis=0).ravel() * rho, label='fake',
                      bins=bins, hist_kws=hist_kwgs, **kwargs)
     distp = sns.distplot(real_sample.mean(axis=0), label='real', bins=bins,
                          color='red', hist_kws=hist_kwgs, **kwargs)
@@ -471,3 +467,86 @@ def plot_all_loss(path='results.npy', save=False, figname='loss.pdf',
         plt.savefig(figname)
 
     plt.show()
+
+
+def plot_isi_distribution(data_scheme='encoded_data',
+                          epoch=-1, real_data_num=-1,
+                          sample_num=(-1, -1, -1, -1), bins=32, rho=6.,
+                          path='results.npy', unique=False, hist_kwgs=None,
+                          save=False, figname='mean_histogram.pdf', **kwargs):
+    """
+    Plots the interspike interval distribution
+
+    :param data_scheme: string, `binned_data` or `encoded_data`
+    :param epoch: epoch number to be considered
+    :param real_data_num:
+    :param sample_num: sample_num: tuple or list of tuples
+        1-dim: list containing lists of integer and tuple, integer indicates the
+            epoch, the tuple contains the step index and the output data,
+            [int, tuple]
+        2-dim: tuple of integer and data as torch.FloatTensor, the integer
+            indicates the step index of the corresponding batch in the loop
+            (int, FloatTensor)
+        3-dim: FloatTensor of shape 64x1x64x64:
+        4-dim: 64 samples x
+            Channel number (here always only 1) x
+            64x64 normalized binned data
+    :param bins: int, number of bins for the histogram
+    :param rho: float, Upscaling parameter, Default is 6.0
+    :param unique: bool,
+    :param path: Path and filename of the results
+    :param hist_kwgs: histogram keywords which are passed on to the histogram
+          function used by seaborn's `distplot` (dictionary, optional)
+    :param save: bool, To save a picture. Default is False
+    :param figname: string, Figurename to save with extension
+    :param path: string, Path to the results file
+    :param kwargs: dictionary, additionally plot parameter for seaborn's
+            `distplot` function (dictionary, optional)
+    """
+    if not isinstance(sample_num, list):
+        sample_num = [sample_num]
+    if data_scheme == 'binned_data':
+        distp = None
+    elif data_scheme == 'encoded_data':
+        distp = _plot_isi_distr_encoded(epoch, real_data_num, sample_num, rho,
+                                        bins, path, unique,
+                                        hist_kwgs, **kwargs)
+    else:
+        raise ValueError('Unknown data scheme')
+    max_xtick = max(distp.get_xlim()) - distp.get_xticks()[-1] + \
+                distp.get_xticks()[-2]
+    max_ytick = max(distp.get_ylim())
+    plt.title('ISI Distribution (epoch:{})'.format(epoch),
+              fontsize=14)
+    plt.text(x=max_xtick, y=max_ytick,
+             s="real sample: {0} \n fake sample: {1}".format(real_data_num,
+                                                             sample_num),
+             ha='left')
+    plt.legend()
+    if save:
+        plt.savefig(figname)
+    plt.show()
+
+
+def _plot_isi_distr_encoded(epoch, real_data_num, sample_num, rho,
+                            bins, path, unique, hist_kwgs, **kwargs):
+    # load all data
+    data = np.load(path).item()
+    # load real data
+    reals = data['encoded_data']
+    fakes = data['fake_data']
+    real_sample = np.diff(reals[real_data_num].flatten())
+    if epoch == -1:
+        epoch = len(fakes) - 1
+
+    def uniq(x): return np.unique(np.abs(np.diff(x))) if unique else (
+        np.abs(np.diff(x)))
+
+    for sn in sample_num:
+        fake_sample = uniq(
+            (fakes[epoch][sn[0]][sn[1]][sn[2]][sn[3]].numpy() * rho).flatten())
+        sns.distplot(fake_sample, label='fake',
+                     bins=bins, hist_kws=hist_kwgs, **kwargs)
+    distp = sns.distplot(uniq(real_sample), label='real', bins=bins,
+                         color='red', hist_kws=hist_kwgs, **kwargs)
+    return distp
