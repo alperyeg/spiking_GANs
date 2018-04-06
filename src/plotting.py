@@ -311,7 +311,7 @@ def plot_mean_histogram(data_scheme='binned_data',
                                             bins, path, hist_kwgs, **kwargs)
     elif data_scheme == 'encoded_data':
         distp = _plot_mean_histogram_encoded(epoch, real_data_num[0],
-                                             sample_num, bins, rho, path,
+                                             sample_num, bins, path, rho,
                                              hist_kwgs, **kwargs)
     else:
         raise ValueError('Unknown data scheme')
