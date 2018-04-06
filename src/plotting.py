@@ -473,7 +473,7 @@ def plot_isi_distribution(data_scheme='encoded_data',
                           epoch=-1, real_data_num=-1,
                           sample_num=(-1, -1, -1, -1), bins=32, rho=6.,
                           path='results.npy', unique=False, hist_kwgs=None,
-                          save=False, figname='mean_histogram.pdf', **kwargs):
+                          save=False, figname='isi_distribution.pdf', **kwargs):
     """
     Plots the interspike interval distribution
 
@@ -522,6 +522,8 @@ def plot_isi_distribution(data_scheme='encoded_data',
              s="real sample: {0} \n fake sample: {1}".format(real_data_num,
                                                              sample_num),
              ha='left')
+    plt.xlabel('Interspike interval (s)')
+    plt.ylabel('Number of intervals per bin')
     plt.legend()
     if save:
         plt.savefig(figname)
