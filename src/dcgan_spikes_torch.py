@@ -302,6 +302,10 @@ class _net_D(nn.Module):
             t_tensor = nn.Parameter(t_tensor_init, requires_grad=True)
             intermediate = self.netD_1(inpt)
             intermed = intermediate.view(-1, ndf * 8 * 4 * 4)
+            if opt.cuda:
+                intermed = intermed.cuda()
+                intermediate = intermediate.cuda()
+                t_tensor = t_tensor.cuda()
             # calculate the matrix M
             ms = intermed.mm(t_tensor)
             ms = ms.view(-1, self.n_B, self.n_C)
