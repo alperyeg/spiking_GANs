@@ -1,8 +1,11 @@
 import matplotlib.pyplot as plt
 import seaborn as sns
 import numpy as np
+import pandas as pd
+import quantities as pq
 
 from matplotlib import animation
+from utils import convert_to_spiketrains as cts
 
 sns.set(color_codes=True, context='paper')
 cmap = sns.husl_palette(10, l=.4)
@@ -550,3 +553,96 @@ def _plot_isi_distr_encoded(epoch, real_data_num, sample_num, rho,
     distp = sns.distplot(uniq(real_sample), label='real', bins=bins,
                          color='red', hist_kws=hist_kwgs, **kwargs)
     return distp
+
+
+def plot_generated_dot_display_joint(fname='', sample_num=(22, 1, 1, 40, 0),
+                                     encoding=False, rate=10, rho=6.,
+                                     save=False, figname=''):
+    """
+     # TODO
+    :param fname:
+    :param sample_num:
+    :param encoding:
+    :param rate:
+    :param rho:
+    :param save:
+    :param figname:
+    :return:
+    """
+    print('loading data')
+    data = np.load(fname).item()
+    print('done loading')
+    fakes = data['fake_data']
+    sn = sample_num
+    if encoding:
+        fake = fakes[sn[0]][sn[1]][sn[2]][sn[3]][sn[4]].numpy() * rho
+        x = []
+        for j, i in enumerate(fake):
+            st = np.abs(np.unique(i))
+            for s in st:
+                x.append((s, j))
+        df = pd.DataFrame(x, columns=['time [s]', 'Neuron ID'])
+        g = sns.JointGrid(x=df['time [s]'], y=df['Neuron ID'])
+        g = g.plot_joint(plt.scatter, marker="|")
+        # g = g.plot_marginals(sns.distplot)
+        mx = np.mean(fake, axis=0)
+        my = np.sum(fake, axis=1)
+        # g.ax_marg_x.step(x=np.linspace(0, 6, len(mx)), y=mx)
+        g.ax_marg_y.step(my, y=range(len(my)), where='pre', color=cmap[5])
+        g.ax_marg_x.hist(df['time [s]'], bins=64,
+                         histtype='step', color=cmap[5])
+        # g.ax_marg_y.barh(range(len(my)), width=my)
+        # g.ax_marg_x.fill_between(np.linspace(0, 6, len(mx)), mx, step='pre')
+        # g.ax_marg_y.fill_between(y1=range(0, 64), x=my, step='pre')
+        g.fig.suptitle('Generated spikes, [5/{}] Hz'.format(rate))
+        plt.setp(g.ax_marg_x.get_yticklabels(), visible=True)
+        plt.setp(g.ax_marg_y.get_xticklabels(), visible=True)
+    else:
+        # TODO binsize need to be loaded from the real data,
+        # but for speed and memory reasons omitted here
+        binsize = 312.5 * pq.ms
+        generated = fakes[sn[0]][sn[1]][sn[2]][sn[3]][sn[4]]
+        print('Converting')
+        # rho needs to be extracted from the binned_data by getting the
+        # maximum of counts of the set or the average
+        # rho e.g. 16
+        sts = cts(generated, binsize, rho=rho)
+        [plt.plot(i.magnitude, np.ones_like(i) * j, '.k') for j, i in
+         enumerate(sts, 1)]
+        plt.xlabel('ms')
+    if save:
+        plt.savefig(figname)
+    plt.show()
+
+
+def plot_generated_dot_display(fname='', sample_num=(22, 1, 1, 40, 0),
+                               encoding=False, rate=10, rho=6.,
+                               save=False):
+    print('loading data')
+    data = np.load(fname).item()
+    print('done loading')
+    fakes = data['fake_data']
+    sn = sample_num
+    fake = fakes[sn[0]][sn[1]][sn[2]][sn[3]][sn[4]].numpy() * rho
+    if encoding:
+        for j, i in enumerate(fake):
+            y = np.ones_like(np.abs(np.unique(i))) * j
+            plt.plot(np.abs(np.unique(i)), y, 'k.')
+            plt.xlabel('time [s]')
+    else:
+        # binsize need to be loaded from the real data, but for speed and
+        # memory reasons omitted
+        binsize = 312.5 * pq.ms
+        generated = fakes[sn[0]][sn[1]][sn[2]][sn[3]][sn[4]]
+        print('Converting')
+        # rho needs to be extracted from the binned_data by getting the
+        # maximum of counts of the set or the average
+        sts = cts(generated, binsize, rho=rho)
+        [plt.plot(i.magnitude, np.ones_like(i) * j, '.k') for j, i in
+         enumerate(sts, 1)]
+        plt.xlabel('ms')
+    plt.ylabel('Neuron ID')
+    plt.title('Generated spikes, [5/{}] Hz'.format(rate))
+    if save:
+        plt.savefig('generated_spikes_encoded.pdf')
+    plt.show()
