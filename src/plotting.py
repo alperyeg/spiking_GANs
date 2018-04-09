@@ -502,7 +502,6 @@ def plot_isi_distribution(data_scheme='encoded_data',
           function used by seaborn's `distplot` (dictionary, optional)
     :param save: bool, To save a picture. Default is False
     :param figname: string, Figurename to save with extension
-    :param path: string, Path to the results file
     :param kwargs: dictionary, additionally plot parameter for seaborn's
             `distplot` function (dictionary, optional)
     """
@@ -561,15 +560,28 @@ def plot_generated_dot_display_joint(fname='', sample_num=(22, 1, 1, 40, 0),
                                      encoding=False, rate=10, rho=6.,
                                      save=False, figname=''):
     """
-     # TODO
-    :param fname:
-    :param sample_num:
-    :param encoding:
-    :param rate:
-    :param rho:
-    :param save:
-    :param figname:
-    :return:
+    Plots the dot display as a scatter plot, the histogram (over the x-axis)
+    and the summed activty for each Neuron (on the y-axis)
+
+    :param fname: string, data file name to load
+    :param sample_num: tuple
+        1-dim: list containing lists of integer and tuple, integer indicates the
+            epoch, the tuple contains the step index and the output data,
+            [int, tuple]
+        2-dim: tuple of integer and data as torch.FloatTensor, the integer
+            indicates the step index of the corresponding batch in the loop
+            (int, FloatTensor)
+        3-dim: FloatTensor of shape 64x1x64x64:
+        4-dim: 64 samples x
+            Channel number (here always only 1) x
+            64x64 normalized data
+    :param encoding: bool, specifies which kind of data should be loaded,
+        Default is False
+    :param rate: int, specifies the rate parameter, used only for the figure
+        title, Default is 10
+    :param rho: float, Upscaling parameter, Default is 6.0
+    :param save: bool, if the figure should be saved
+    :param figname: string, name of the figure to save
     """
     print('loading data')
     data = np.load(fname).item()
@@ -619,7 +631,31 @@ def plot_generated_dot_display_joint(fname='', sample_num=(22, 1, 1, 40, 0),
 
 def plot_generated_dot_display(fname='', sample_num=(22, 1, 1, 40, 0),
                                encoding=False, rate=10, rho=6.,
-                               save=False):
+                               save=False, figname=''):
+    """
+    Plots the dot display
+
+    :param fname: string, data file name to load
+    :param sample_num: tuple
+        1-dim: list containing lists of integer and tuple, integer indicates the
+            epoch, the tuple contains the step index and the output data,
+            [int, tuple]
+        2-dim: tuple of integer and data as torch.FloatTensor, the integer
+            indicates the step index of the corresponding batch in the loop
+            (int, FloatTensor)
+        3-dim: FloatTensor of shape 64x1x64x64:
+        4-dim: 64 samples x
+            Channel number (here always only 1) x
+            64x64 normalized data
+    :param encoding: bool, specifies which kind of data should be loaded,
+        Default is False
+    :param rate: int, specifies the rate parameter, used only for the figure
+        title, Default is 10
+    :param rho: float, Upscaling parameter, Default is 6.0
+    :param save: bool, if the figure should be saved
+    :param figname: string, name of the figure to save
+
+    """
     print('loading data')
     data = np.load(fname).item()
     print('done loading')
@@ -646,5 +682,5 @@ def plot_generated_dot_display(fname='', sample_num=(22, 1, 1, 40, 0),
     plt.ylabel('Neuron ID')
     plt.title('Generated spikes, [5/{}] Hz'.format(rate))
     if save:
-        plt.savefig('generated_spikes_encoded.pdf')
+        plt.savefig(figname)
     plt.show()
