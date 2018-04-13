@@ -604,7 +604,7 @@ def plot_generated_dot_display_joint(fname='', sample_num=(22, 1, 1, 40, 0),
         # g.ax_marg_x.step(x=np.linspace(0, 6, len(mx)), y=mx)
         g.ax_marg_y.step(my, y=range(len(my)), where='pre', color=cmap[5])
         g.ax_marg_x.hist(df['time [s]'], bins=64,
-                         histtype='step', color=cmap[5])
+                         histtype='step', color=cmap[5], lw=1.5)
         # g.ax_marg_y.barh(range(len(my)), width=my)
         # g.ax_marg_x.fill_between(np.linspace(0, 6, len(mx)), mx, step='pre')
         # g.ax_marg_y.fill_between(y1=range(0, 64), x=my, step='pre')
