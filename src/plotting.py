@@ -319,7 +319,7 @@ def plot_mean_histogram(data_scheme='binned_data',
     else:
         raise ValueError('Unknown data scheme')
     max_xtick = max(distp.get_xlim()) - distp.get_xticks()[-1] + \
-                distp.get_xticks()[-2]
+        distp.get_xticks()[-2]
     max_ytick = max(distp.get_ylim())
     plt.title('Distribution of mean activity (epoch:{})'.format(epoch),
               fontsize=14)
@@ -516,7 +516,7 @@ def plot_isi_distribution(data_scheme='encoded_data',
     else:
         raise ValueError('Unknown data scheme')
     max_xtick = max(distp.get_xlim()) - distp.get_xticks()[-1] + \
-                distp.get_xticks()[-2]
+        distp.get_xticks()[-2]
     max_ytick = max(distp.get_ylim())
     plt.title('ISI Distribution (epoch:{})'.format(epoch),
               fontsize=14)
@@ -590,6 +590,7 @@ def plot_generated_dot_display_joint(fname='', sample_num=(22, 1, 1, 40, 0),
     sn = sample_num
     if encoding:
         fake = fakes[sn[0]][sn[1]][sn[2]][sn[3]][sn[4]].numpy() * rho
+        # fake = fake[:, :40]
         x = []
         for j, i in enumerate(fake):
             st = np.abs(np.unique(i))
@@ -599,12 +600,14 @@ def plot_generated_dot_display_joint(fname='', sample_num=(22, 1, 1, 40, 0),
         g = sns.JointGrid(x=df['time [s]'], y=df['Neuron ID'])
         g = g.plot_joint(plt.scatter, marker="|")
         # g = g.plot_marginals(sns.distplot)
-        mx = np.mean(fake, axis=0)
-        my = np.sum(fake, axis=1)
+        # mx = np.mean(fake, axis=0)
+        my = np.sum(fake, axis=1) / rho
         # g.ax_marg_x.step(x=np.linspace(0, 6, len(mx)), y=mx)
         g.ax_marg_y.step(my, y=range(len(my)), where='pre', color=cmap[5])
         g.ax_marg_x.hist(df['time [s]'], bins=64,
                          histtype='step', color=cmap[5], lw=1.5)
+        g.ax_marg_x.set_title('counts')
+        g.ax_marg_y.set_title('rate [Hz]')
         # g.ax_marg_y.barh(range(len(my)), width=my)
         # g.ax_marg_x.fill_between(np.linspace(0, 6, len(mx)), mx, step='pre')
         # g.ax_marg_y.fill_between(y1=range(0, 64), x=my, step='pre')
