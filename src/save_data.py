@@ -22,7 +22,7 @@ parser.add_argument('--generate', required=True, type=bool,
 opt = parser.parse_args()
 
 '''
-Supported data types are so far (step_rate | variability)
+Supported data types are so far (step_rate | variability | pattern)
 '''
 
 # Number of data samples
@@ -64,6 +64,10 @@ def generate_data(data_type, encode=False):
                                                 num_bins=64,
                                                 num_sts=64,
                                                 binned=(not encode))
+    elif data_type == 'pattern':
+        d = DataDistribution.generate_stp_data(n_neurons=64, rate=10 * pq.Hz,
+                                               occurr=5, xi=20, t_stop=6 * pq.s,
+                                               delay=0 * pq.ms)
     return d
 
 
@@ -100,7 +104,7 @@ if opt.encoding:
     save_dict['normed_data'] = norm_data
     save_dict['num_samples'] = num_samples
     save_dict['imageSize'] = imageSize
-    save_dict['spikes'] = raw_data
+    save_dict['spikes'] = raw_data[:100]
     save_dict['encoded_data'] = encoded_data
     save_dict['normed_values'] = norm_value
 
