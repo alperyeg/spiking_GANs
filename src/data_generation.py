@@ -3,10 +3,11 @@ import neo
 
 from scipy.misc import factorial
 from quantities import Hz, s, ms
-from elephant.spike_train_generation import homogeneous_poisson_process
+from elephant.spike_train_generation import homogeneous_poisson_process, \
+    _pool_two_spiketrains
 from elephant.conversion import BinnedSpikeTrain
 from stocmod import poisson_nonstat
-from STP_generation import generate_sts
+from STP_generation import generate_sts, generate_stp
 
 np.random.seed(123)
 
@@ -135,6 +136,71 @@ class DataDistribution(object):
             return binned_sts, sts
         return sts
 
+    @staticmethod
+    def generate_stp_data(n_neurons, rate, occurr, xi, t_stop, delay):
+        """
+        Generate independent data with embedded STPs. The underlying process is
+        an homogeneous stationary multi-dimensional Poisson process.
+
+        `occurr` patterns with size `xi` are merged into the first `xi`
+        spiketrains.
+
+        Parameters
+        ----------
+        n_neurons: int
+            Number of neurons
+        rate: pq.Quantity
+            Firing rate
+        occurr: int
+            Pattern occurrence in the data
+        xi: int
+            Size of pattern
+        t_stop: pq.Quantity
+           Stop time of the spiketrain
+        delay: pq.Quantity
+          Delay between the patterns, 0 is synchrony
+
+        Examples
+        --------
+        >>> from data_generation import DataDistribution
+        >>> # generation of data
+        >>> stp_data = DataDistribution.generate_stp_data(n_neurons=64,
+        rate=10 * Hz, occurr=5, xi=3, t_stop=5 * s, delay=0 * ms)
+
+        """
+        rate_patt = t_stop.simplified.magnitude / float(occurr) * Hz
+        rates = [rate - rate_patt] * xi + [rate] * (n_neurons - xi)
+        for i in range(n_neurons):
+            # Generate the independent background of sts
+            # sts_rep = {'data': [], 'patterns': []}
+            # np.random.seed(i + xi + occurr)
+            sts = [homogeneous_poisson_process(
+                rate=r, t_stop=t_stop, t_start=0 * s) for r in rates]
+            stp = None
+            # Iterating different complexities of the patterns
+            # Generating the stp
+            if delay.magnitude > 0:
+                stp = generate_stp(occurr=occurr,
+                                   xi=xi,
+                                   t_stop=t_stop,
+                                   delays=np.arange(delay.magnitude,
+                                                    delay.magnitude * (xi),
+                                                    delay.magnitude) * delay.units)
+            elif delay.magnitude == 0:
+                stp = generate_stp(occurr=occurr,
+                                   xi=xi,
+                                   t_stop=t_stop,
+                                   delays=np.zeros(xi - 1) * delay.units)
+                # Merging the stp in the first xi sts
+            sts_pool = [0] * xi
+            for st_id, st in enumerate(stp):
+                # st.annotate(xi=xi, occ=occurr, t_stop=t_stop, rate=rate, delay=delay, n_dataset=i)
+                sts_pool[st_id] = _pool_two_spiketrains(st, sts[st_id])
+
+            # Storing datasets containing stps
+            sts_rep = {'data': sts_pool + sts[xi:], 'patterns': stp}
+        return sts_rep
+
 
 class GeneratorDistribution(object):
 
@@ -154,14 +220,14 @@ class GeneratorDistribution(object):
 
     def sample_int(self, n):
         return np.linspace(self.lower_range, self.upper_range, n) + \
-               np.random.randint(-self.upper_range/2, self.upper_range/2, n)
+            np.random.randint(-self.upper_range/2, self.upper_range/2, n)
 
     def binned_samples(self, shape):
         def samples(shape):
             return np.linspace(self.lower_range, self.upper_range,
                                shape[0]) + \
-                   np.random.randint(self.lower_range,
-                                     self.upper_range / 2, shape[1])
+                np.random.randint(self.lower_range,
+                                  self.upper_range / 2, shape[1])
 
         data = np.zeros(shape)
         for i in range(shape[0]):
