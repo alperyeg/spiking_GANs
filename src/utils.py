@@ -4,6 +4,7 @@ import tensorflow as tf
 import quantities as pq
 import neo
 
+from collections import Counter
 
 def save(ckpt_dir, step, saver, sess, model_name):
     if not os.path.exists(ckpt_dir):
@@ -56,6 +57,20 @@ def convert_to_spiketrains(binned_data, binsize, rho, units='ms'):
                                         units=units)
         spiketrains.append(neo_spiketrain)
     return spiketrains
+
+
+def _check_nonunique_spikes(spiketrain, num_spikes):
+    """
+    Checks for non-unique spikes, if the number if higher than `num_spikes`
+    then returns False
+    """
+    c = Counter(spiketrain.ravel()).values()
+    unique = True
+    for i in c:
+        if i > num_spikes:
+            unique = False
+            break
+    return unique
 
 
 def encode_input(spiketrains, rows, columns, dt=1 * pq.ms, refrac=2 * pq.ms):
@@ -123,7 +138,7 @@ def encoder(spiketrains, cols, dt, min_spikes=32):
     Encodes the input for a given set of spiketrains, via sliding window
 
     :param spiketrains: neo.SpikeTrain objects
-    :param cols: number of columns for the matrix 
+    :param cols: number of columns for the matrix
     :param dt: time resolution
     :param min_spikes: minimum number of spikes inside the matrix to be
         considered, results with less than `cols * min_spikes` will not be
