@@ -10,7 +10,7 @@ from utils import encoder
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--data_type', required=False, type=str,
-                    help='kind of rate (step_rate | variability)',
+                    help='kind of rate (step_rate | variability | pattern)',
                     default='step_rate')
 parser.add_argument('--encoding', required=False, type=str,
                     help='if input should be encoded',
@@ -68,6 +68,7 @@ def generate_data(data_type, encode=False):
         d = DataDistribution.generate_stp_data(n_neurons=64, rate=10 * pq.Hz,
                                                occurr=5, xi=20, t_stop=6 * pq.s,
                                                delay=0 * pq.ms)
+        d = d['data']
     return d
 
 
