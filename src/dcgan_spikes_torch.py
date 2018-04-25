@@ -29,8 +29,12 @@ except KeyError:
 parser = argparse.ArgumentParser()
 parser.add_argument('--dataset', required=False,
                     help='cifar10 | lsun | imagenet | folder | lfw | fake | '
-                         'step_rate | variability',
+                         'step_rate | variability | pattern',
                     default='step_rate')
+parser.add_argument('--dataname', required=False,
+                    help='Name of dataset, use together with dataroot to '
+                         'navigate to the dataset',
+                    type=str)
 parser.add_argument('--dataroot', required=False, help='path to dataset')
 parser.add_argument('--workers', type=int,
                     help='number of data loading workers', default=2)
@@ -94,17 +98,20 @@ if torch.cuda.is_available() and not opt.cuda:
 
 # loading routines
 def load_data(dataset_name, encoding=False, array_id=10):
-    t = time.time()
     if encoding:
         try:
+            fname = dataset_name
+            dat = np.load(fname).item()
+        except (KeyError, FileNotFoundError):
             fname = './logs/data/data_NS10000_IS64_type-{}_encoded-{}_rate{}.npy'.format(
                 dataset_name, encoding, array_id)
-        except (KeyError, FileNotFoundError):
-            fname = './logs/data/data_NS10000_IS64_type-step_rate_encoded-True_rate10.npy'
-        data = np.load(fname).item()
-        norm_data = data['normed_data']
+        else:
+            raise FileNotFoundError(
+                "Couldn't find a dataset: {}".format(fname))
+        print("Loading dataset: {}".format(fname))
+        norm_data = dat['normed_data']
         num_samples = len(norm_data)
-        encoded_data = data['encoded_data']
+        encoded_data = dat['encoded_data']
         # Convert list to float32
         tensor_all = torch.from_numpy(
             np.array(norm_data, dtype=np.float32))
@@ -115,14 +122,18 @@ def load_data(dataset_name, encoding=False, array_id=10):
         save_dict['encoded_data'] = encoded_data
     else:
         try:
+            fname = dataset_name
+            dat = np.load(fname).item()
+        except (FileNotFoundError, KeyError):
             fname = './logs/data/data_NS10000_IS64_type-{0}_rate{1}.npy'.format(
                 dataset_name, array_id)
-        except (FileNotFoundError, KeyError):
-            fname = './logs/data/data_NS10000_IS64_type-{0}{1}.npy'.format(
-                dataset_name, array_id)
-        data = np.load(fname).item()
-        binned_data = data['binned_data']
-        norm_data = data['normed_data']
+            dat = np.load(fname).item()
+        else:
+            raise FileNotFoundError(
+                "Couldn't find a dataset: {}".format(fname))
+        print("Loading dataset: {}".format(fname))
+        binned_data = dat['binned_data']
+        norm_data = dat['normed_data']
         num_samples = len(binned_data)
         # Save original binned data too
         save_dict['binned_data'] = binned_data
@@ -130,7 +141,7 @@ def load_data(dataset_name, encoding=False, array_id=10):
         tensor_all = torch.from_numpy(np.array(norm_data, dtype=np.float32))
         raw_tensor = torch.from_numpy(np.array(binned_data, dtype=np.float32))
     # Free space
-    del data
+    del dat
     # preprocess(tensor_all)
     # Define targets as ones
     # label smoothing, i.e. set labels to 0.9
@@ -173,11 +184,12 @@ elif opt.dataset == 'fake':
     dataset = dset.FakeData(image_size=(3, opt.imageSize, opt.imageSize),
                             transform=transforms.ToTensor())
 
-# Load datasets with type (step_rate | variability)
+# Load datasets with type (step_rate | variability | pattern)
 else:
     print('loading data')
     t = time.time()
-    dataset, tensor_raw = load_data(dataset_name=opt.dataset,
+    dataset, tensor_raw = load_data(dataset_name=os.path.join(opt.dataroot,
+                                                              opt.dataname),
                                     encoding=opt.encoding,
                                     array_id=ARRAY_ID)
     print('done loading data, in sec: {}'.format(time.time() - t))
@@ -298,7 +310,8 @@ class _net_D(nn.Module):
         else:
             # minibatch discrimination
             # create Tensor T (trainable)
-            t_tensor_init = torch.rand(ndf * 8 * 4 * 4, self.n_B * self.n_C) * 0.1
+            t_tensor_init = torch.rand(
+                ndf * 8 * 4 * 4, self.n_B * self.n_C) * 0.1
             t_tensor = nn.Parameter(t_tensor_init, requires_grad=True)
             intermediate = self.netD_1(inpt)
             intermed = intermediate.view(-1, ndf * 8 * 4 * 4)
@@ -468,18 +481,18 @@ for epoch in range(opt.niter):
                               normalize=False)
             '''
             1-dim: list with all the data, listed according the epochs
-            2-dim: list containing lists of integer and tuple, 
-                integer indicates the epoch, the tuple contains the step index 
+            2-dim: list containing lists of integer and tuple,
+                integer indicates the epoch, the tuple contains the step index
                 and the output data,
                 [int, tuple]
             3-dim: tuple of integer and data as torch.FloatTensor, the integer
                 indicates the step index of the corresponding batch in the loop
                 (int, FloatTensor)
-            4-dim: FloatTensor of shape 64x1x64x64: 
-            5-dim: 
-                64 samples x 
-                Channel number (here always only 1) x 
-                64x64 normalized binned data  
+            4-dim: FloatTensor of shape 64x1x64x64:
+            5-dim:
+                64 samples x
+                Channel number (here always only 1) x
+                64x64 normalized binned data
             '''
             save_dict['fake_data'][epoch].append((i, fake.data))
 

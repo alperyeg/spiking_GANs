@@ -4,6 +4,7 @@ import time
 import quantities as pq
 import utils
 import argparse
+import uuid
 from data_generation import DataDistribution
 from utils import encoder
 
@@ -18,6 +19,10 @@ parser.add_argument('--encoding', required=False, type=str,
 parser.add_argument('--generate', required=True, type=bool,
                     help='if the data should be generated',
                     default=True)
+parser.add_argument('--filename', required=False, type=str,
+                    help='Name of the file to be saved')
+parser.add_argument('--path', required=False, type=str, default='.',
+                    help='Path of the file to be saved')
 
 opt = parser.parse_args()
 
@@ -77,7 +82,7 @@ for i in range(num_samples):
         data = generate_data(data_type=opt.data_type, encode=opt.encoding)
         if opt.encoding:
             raw_data.append(data)
-            encoded_data.extend(encoder(data, imageSize, 500 * pq.ms, 10))
+            encoded_data.extend(encoder(data, imageSize, 200 * pq.ms, 10))
         else:
             dat = data[0].to_array().ravel()
             raw_data.append(data[1])
@@ -116,7 +121,13 @@ else:
     save_dict['imageSize'] = imageSize
     save_dict['spikes'] = raw_data
     save_dict['data_type'] = opt.data_type
-utils.save_samples(save_dict, path='.',
-                   filename='data_NS{}_IS{}_type-{}_encoded-{}_rate{}.npy'.format(
+
+if opt.filename:
+    fname = opt.filename
+else:
+    fname = 'data_NS{}_IS{}_type-{}_encoded-{}_rate{}.npy'.format(
                        num_samples, imageSize, opt.data_type, opt.encoding,
-                       ARRAY_ID))
+                       ARRAY_ID)
+u = str(uuid.uuid4())
+path = os.path.join(opt.path, u)
+utils.save_samples(save_dict, path=path, filename=fname)
