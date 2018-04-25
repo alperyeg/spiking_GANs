@@ -105,10 +105,7 @@ def load_data(dataset_name, encoding=False, array_id=10):
         except (KeyError, FileNotFoundError):
             fname = './logs/data/data_NS10000_IS64_type-{}_encoded-{}_rate{}.npy'.format(
                 dataset_name, encoding, array_id)
-        else:
-            raise FileNotFoundError(
-                "Couldn't find a dataset: {}".format(fname))
-        print("Loading dataset: {}".format(fname))
+        print("Loaded dataset: {}".format(fname))
         norm_data = dat['normed_data']
         num_samples = len(norm_data)
         encoded_data = dat['encoded_data']
@@ -128,10 +125,7 @@ def load_data(dataset_name, encoding=False, array_id=10):
             fname = './logs/data/data_NS10000_IS64_type-{0}_rate{1}.npy'.format(
                 dataset_name, array_id)
             dat = np.load(fname).item()
-        else:
-            raise FileNotFoundError(
-                "Couldn't find a dataset: {}".format(fname))
-        print("Loading dataset: {}".format(fname))
+        print("Loaded dataset: {}".format(fname))            
         binned_data = dat['binned_data']
         norm_data = dat['normed_data']
         num_samples = len(binned_data)
