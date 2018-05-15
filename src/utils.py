@@ -164,3 +164,14 @@ def encoder(spiketrains, cols, dt, min_spikes=32):
     [ms.append(en[:, w * cols:cols * (w + 1)]) for w in range(windows) if
      len(np.unique(en[:, w * cols:cols * (w + 1)])) > cols * min_spikes]
     return ms
+
+
+def decode(data, rho, step):
+    """
+    Decodes the encoded input `data`. 
+    Returns the mask. 
+    """
+    diff = np.diff(data) >= step / rho
+    data = data[:,:-1]
+    return data, diff
+
