@@ -12,9 +12,11 @@ import scipy.stats as stats
 import argparse
 import os
 import random
+import yaml
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import torch.nn.parallel
 import torch.backends.cudnn as cudnn
 import torch.optim as optim
@@ -25,7 +27,6 @@ import torchvision.utils as vutils
 
 from datetime import datetime
 from torch.utils.data import TensorDataset
-from torch.autograd import Variable
 from tensorboardX import SummaryWriter
 
 parser = argparse.ArgumentParser()
@@ -34,7 +35,7 @@ parser.add_argument('--dataset', required=False,
                          'step_rate | variability | pattern',
                     default='step_rate')
 parser.add_argument('--lambda_lp', required=False, default=0.1,
-                    help='Penality for Lipschtiz divergence')
+                    help='Penalty for Lipschtiz divergence')
 parser.add_argument('--critic_iters', required=False, default=5,
                     help='How many critic iterations per generator iteration')
 parser.add_argument('--batch_size', required=False, default=256)
@@ -56,6 +57,12 @@ parser.add_argument('--ngpu', type=int, default=1,
                     help='Number of GPUs to use')
 
 opt = parser.parse_args()
+with open('params.yaml', 'r') as stream:
+    try:
+        params = yaml.load(stream)
+        print(params)
+    except yaml.YAMLError as err:
+        print(err)
 print(opt)
 
 # other parameters
@@ -110,37 +117,62 @@ class Generator(nn.Module):
                  state_size=64,
                  n_gpu=1):
         super(Generator, self).__init__()
+        self.rnn_inputs = rnn_inputs
         self.n_gpu = n_gpu
         self.seqlen = seq_len
-        self.cell_type = cell_type
         self.num_layers = num_layers
         self.state_size = state_size
         self.batch_size = opt.batch_size
+        # TODO careful here, check
         self.num_steps = rnn_inputs.shape[1]
 
         # RNN
         if cell_type == 'Basic':
-            cell = nn.RNN(state_size * num_layers)
-            cell = tf.contrib.rnn.BasicRNNCell(state_size)
+            self.rnn = nn.RNN(input_size=state_size, hidden_size=state_size,
+                              num_layers=num_layers, nonlinearity='tanh')
         elif cell_type == 'LSTM':
-            cell = tf.contrib.rnn.LSTMCell(state_size,
-                                           state_is_tuple=True)  # tuple of c_state and m_state
+            self.rnn = nn.LSTM(input_size=state_size, hidden_size=state_size,
+                               num_layers=num_layers, nonlinearity='tanh')
+        self.h0, self.c0 = self.hidden(num_layers, self.batch_size, state_size)
 
-        if cell_type == 'LSTM':
-            cell = tf.contrib.rnn.MultiRNNCell([cell] * num_layers,
-                                               state_is_tuple=True)
-        elif cell_type == 'Basic':
-            cell = tf.contrib.rnn.MultiRNNCell([cell] * num_layers,
-                                               state_is_tuple=False)
+    def forward(self):
+        # TODO: beware, rnn_inputs needs to be a vector of
+        # shape (seq_len, batch_input_size)
+        output, hidden = self.rnn(self.rnn_inputs, (self.h0, self.c0))
+        # add softmax layer
+        # TODO check in corresponding tf code following line
+        out = F.softmax(output, dim=0)
 
-        # self.main = nn.Sequential
+        if not D_DIFF and G_DIFF:  # depend on D_DIFF
+            W = torch.FloatTensor(self.state_size, 1)
+            b = torch.zeros([1])
+            logits_t = torch.matmul(output, W) + b
+            logits_t = F.elu(logits_t) + 1
+            logits_t = torch.cumsum(logits_t, dim=1)
+            out = logits_t
 
-    def forward(self, inpt):
-        if isinstance(inpt.data, torch.cuda.FloatTensor) and self.ngpu > 1:
-            out = nn.parallel.data_parallel(self.main, inpt, range(self.ngpu))
+        if MARK:
+            W = torch.FloatTensor(self.state_size, 1)
+            b = torch.zeros([1])
+            logits_t = torch.matmul(output, W) + b
+            # redeclare W, b
+            W = torch.FloatTensor(self.state_size, DIM_SIZE)
+            b = torch.FloatTensor([DIM_SIZE])
+            nn.init.constant(b, 0)
+            logits_prob = torch.matmul(output, W) + b
+            logits_prob = nn.Softmax(logits_prob)
+            logits = torch.cat([logits_t, logits_prob], dim=1)
+            logits.resize_(self.batch_size, self.num_steps, DIM_SIZE + 1)
+            out = logits
         else:
-            out = self.main(inpt)
-        return out
+            out.resize(self.batch_size, self.num_steps, 1)
+        return out, hidden
+
+    @staticmethod
+    def init_hidden(n_layers=1, mb_size=1, h_dim=64):
+        # The axes semantics are (num_layers, minibatch_size, hidden_dim)
+        return (torch.zeros(n_layers, mb_size, h_dim),
+                torch.zeros(n_layers, mb_size, h_dim))
 
 
 netG = Generator(ngpu)
