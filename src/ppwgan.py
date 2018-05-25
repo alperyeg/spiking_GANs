@@ -29,6 +29,7 @@ from datetime import datetime
 from torch.utils.data import TensorDataset
 from tensorboardX import SummaryWriter
 
+# TODO change to config file
 parser = argparse.ArgumentParser()
 parser.add_argument('--dataset', required=False,
                     help='cifar10 | lsun | imagenet | folder | lfw | fake | '
@@ -66,6 +67,7 @@ with open('params.yaml', 'r') as stream:
 print(opt)
 
 # other parameters
+# TODO move to param config file
 PRE_TRAIN = True
 COST_ALL = True
 G_DIFF = True
@@ -115,14 +117,15 @@ class Generator(nn.Module):
                  cell_type='LSTM',
                  num_layers=1,
                  state_size=64,
+                 batch_size=opt.batch_size,
                  n_gpu=1):
         super(Generator, self).__init__()
         self.rnn_inputs = rnn_inputs
         self.n_gpu = n_gpu
-        self.seqlen = seq_len
+        self.seq_len = seq_len
         self.num_layers = num_layers
         self.state_size = state_size
-        self.batch_size = opt.batch_size
+        self.batch_size = batch_size
         # TODO careful here, check
         self.num_steps = rnn_inputs.shape[1]
 
@@ -173,6 +176,41 @@ class Generator(nn.Module):
         # The axes semantics are (num_layers, minibatch_size, hidden_dim)
         return (torch.zeros(n_layers, mb_size, h_dim),
                 torch.zeros(n_layers, mb_size, h_dim))
+
+
+class Discriminator(nn.Module):
+    def __init__(self, rnn_inputs,  # dims batch_size x num_steps x input_size
+                 seq_len,
+                 lower_triangular_ones,
+                 cell_type='LSTM',
+                 num_layers=1,
+                 state_size=64,
+                 batch_size=opt.batch_size,
+                 cost_all=COST_ALL,
+                 n_gpu=1):
+        super(Discriminator, self).__init__()
+        self.rnn_inputs = rnn_inputs
+        self.n_gpu = n_gpu
+        self.seq_len = seq_len
+        self.num_layers = num_layers
+        self.state_size = state_size
+        self.batch_size = batch_size
+        self.cost_all = cost_all
+
+        # TODO careful here, check
+        self.num_steps = rnn_inputs.shape[1]
+        keep_prob = torch.FloatTensor([0.9])
+
+        # RNN
+        if cell_type == 'Basic':
+            self.rnn = nn.RNN(input_size=state_size, hidden_size=state_size,
+                              num_layers=num_layers, nonlinearity='tanh')
+        elif cell_type == 'LSTM':
+            self.rnn = nn.LSTM(input_size=state_size, hidden_size=state_size,
+                               num_layers=num_layers, nonlinearity='tanh')
+        self.h0, self.c0 = self.hidden(num_layers, self.batch_size, state_size)
+
+    def forward(self, *input):
 
 
 netG = Generator(ngpu)
