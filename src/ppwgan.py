@@ -26,6 +26,8 @@ import torchvision.transforms as transforms
 import torchvision.utils as vutils
 
 from datetime import datetime
+
+from numpy import real
 from torch.utils.data import TensorDataset
 from tensorboardX import SummaryWriter
 
@@ -56,6 +58,10 @@ parser.add_argument('--data', required=False, default='hawkes',
 parser.add_argument('--cuda', action='store_true', help='Enables cuda')
 parser.add_argument('--ngpu', type=int, default=1,
                     help='Number of GPUs to use')
+parser.add_argument('--gen', default='',
+                    help="path to Generator (to continue training)")
+parser.add_argument('--disc', default='',
+                    help="path to Discriminator (to continue training)")
 
 opt = parser.parse_args()
 with open('params.yaml', 'r') as stream:
@@ -112,22 +118,18 @@ def weights_init(m):
 
 
 class Generator(nn.Module):
-    def __init__(self, rnn_inputs,
-                 seq_len,
+    def __init__(self,
                  cell_type='LSTM',
                  num_layers=1,
                  state_size=64,
                  batch_size=opt.batch_size,
                  n_gpu=1):
         super(Generator, self).__init__()
-        self.rnn_inputs = rnn_inputs
         self.n_gpu = n_gpu
-        self.seq_len = seq_len
         self.num_layers = num_layers
         self.state_size = state_size
         self.batch_size = batch_size
-        # TODO careful here, check
-        self.num_steps = rnn_inputs.shape[1]
+
 
         # RNN
         if cell_type == 'Basic':
@@ -138,7 +140,9 @@ class Generator(nn.Module):
                                num_layers=num_layers, nonlinearity='tanh')
         self.h0, self.c0 = init_hidden(num_layers, self.batch_size, state_size)
 
-    def forward(self):
+    def forward(self, rnn_inputs, seq_len):
+        # TODO careful here, check
+        num_steps = rnn_inputs.shape[1]
         # TODO: beware, rnn_inputs needs to be a vector of
         # shape (seq_len, batch_input_size)
         output, hidden = self.rnn(self.rnn_inputs, (self.h0, self.c0))
@@ -167,10 +171,10 @@ class Generator(nn.Module):
             logits_prob = torch.mm(output, W) + b
             logits_prob = nn.Softmax(logits_prob)
             logits = torch.cat([logits_t, logits_prob], dim=1)
-            logits.resize_(self.batch_size, self.num_steps, DIM_SIZE + 1)
+            logits.resize_(self.batch_size, num_steps, DIM_SIZE + 1)
             out = logits
         else:
-            out.resize(self.batch_size, self.num_steps, 1)
+            out.resize(self.batch_size, num_steps, 1)
         return out, hidden
 
 
@@ -181,8 +185,7 @@ def init_hidden(n_layers=1, mb_size=1, h_dim=64):
 
 
 class Discriminator(nn.Module):
-    def __init__(self, rnn_inputs,  # dims batch_size x num_steps x input_size
-                 seq_len,
+    def __init__(self,  # dims batch_size x num_steps x input_size
                  lower_triangular,
                  cell_type='LSTM',
                  num_layers=1,
@@ -191,17 +194,13 @@ class Discriminator(nn.Module):
                  cost_all=COST_ALL,
                  n_gpu=1):
         super(Discriminator, self).__init__()
-        self.rnn_inputs = rnn_inputs
         self.n_gpu = n_gpu
-        self.seq_len = seq_len
         self.num_layers = num_layers
         self.state_size = state_size
         self.batch_size = batch_size
         self.cost_all = cost_all
         self.lower_triangular_ones = lower_triangular
 
-        # TODO careful here, check
-        self.num_steps = rnn_inputs.shape[1]
         keep_prob = torch.FloatTensor([0.9])
 
         # RNN
@@ -215,7 +214,10 @@ class Discriminator(nn.Module):
         self.h0, self.c0 = init_hidden(num_layers, self.batch_size, state_size)
         self.dropout = nn.Dropout(p=keep_prob)
 
-    def forward(self, *inpt):
+    def forward(self, rnn_inputs, seq_len):
+        # TODO careful here, check
+        num_steps = rnn_inputs.shape[1]
+
         output, hidden = self.rnn(self.rnn_inputs, (self.h0, self.c0))
 
         # Add dropout
@@ -223,30 +225,30 @@ class Discriminator(nn.Module):
         # reshape rnn_outputs
         rnn_outputs = torch.reshape(rnn_outputs, (-1, self.state_size))
 
+        # TODO try with softmax layer from nn package
         # Softmax layer
         W = torch.randn((self.state_size, 1))
         b = torch.zeros([1])
         # logits = torch.matmul(rnn_outputs, W) + b
         logits = torch.mm(rnn_outputs, W) + b
 
-        # TODO add slicing
-        # seqlen_mask = tf.slice(tf.gather(lower_triangular_ones, seqlen - 1),[0, 0], [batch_size,num_steps])
+        # TODO check if correct with start and length
         seqlen_mask = torch.gather(
             input=torch.Tensor(self.lower_triangular_ones),
-            index=self.seq_len - 1, dim=0)
+            index=seq_len - 1, dim=0).narrow(dim=0, start=self.batch_size,
+                                             length=num_steps)
 
         if self.cost_all:
-            logits = torch.reshape(logits, (self.batch_size, self.num_steps))
+            logits = torch.reshape(logits, (self.batch_size, num_steps))
             logits *= seqlen_mask
             # Average over actual sequence lengths.
             f_val = torch.sum(input=logits, dim=1)
             f_val /= torch.sum(input=seqlen_mask, dim=1)
         else:
             # Select the Last Relevant Output
-            index = torch.range(0, self.batch_size) * self.num_steps + (
-                self.seq_len - 1)
+            index = torch.range(0, self.batch_size) * num_steps + (seq_len - 1)
             flat = torch.reshape(logits, (-1, 1))
-            relevant = torch.gather(flat, index=index)
+            relevant = torch.gather(flat, index=index, dim=0)
             f_val = torch.reshape(relevant, self.batch_size)
         return f_val
 
@@ -281,6 +283,9 @@ def make_one_hot(labels, n_class=2):
 if MARK:
     # TODO
     z_one_hot = make_one_hot()
+else:
+    # TODO check if correct shape of [batch_size, num_steps]
+    z_all = torch.Tensor(opt.batch_size, 1)
 # if MARK:
 #     Z = tf.placeholder(tf.float32, shape=[BATCH_SIZE, None, 2]) # time,dim
 #     Z_one_hot = tf.one_hot( tf.cast(Z[:,:,1],tf.int32),DIM_SIZE )
@@ -305,12 +310,55 @@ if MARK:
 lower_triangular_ones = torch.FloatTensor(
     np.tril(np.ones([opt.max_steps, opt.max_steps])))
 
-discricimator = Discriminator()
-discricimator.apply(weights_init)
-# TODO add loading of discriminator from pretrained state
+discriminator = Discriminator(lower_triangular_ones, n_gpu=int(opt.ngpu))
+discriminator.apply(weights_init)
 
-generator = Generator()
+generator = Generator(n_gpu=int(opt.ngpu))
 generator.apply(weights_init)
 
+if opt.gen != '':
+    generator.load_state_dict(torch.load(opt.netG))
+print(generator)
+if opt.disc != '':
+    discriminator.load_state_dict(torch.load(opt.netG))
+print(discriminator)
+
+
+if opt.cuda:
+    discriminator.cuda()
+    generator.cuda()
+    # criterionD.cuda()
+    # criterionG.cuda()
+    # input_, label = input_.cuda(), label.cuda()
+    # noise, fixed_noise = noise.cuda(), fixed_noise.cuda()
+
 # TODO: define labels, noise, optimizer (as empty tensors)
-# TODO: make it available for cuda
+fake_seqlen = torch.IntTensor(opt.batch_size)
+fake_data = generator(fake_seqlen)
+
+real_seqlen = torch.IntTensor(opt.batch_size)
+
+
+# WGAN Lipschitz constraint
+if opt.mode == 'wgan-lp':
+    # setup optimizer
+    disc_train_op = optim.Adam(discriminator.parameters(), lr=1e-4,
+                               betas=(0.5, 0.9))
+    gen_train_op = optim.Adam(generator.parameters(), lr=1e-4, betas=(0.5, 0.9))
+
+# TODO training steps, everything else comes below here
+#
+# real_mask = torch.gather(input=torch.Tensor(lower_triangular_ones),
+#                          index=real_seqlen - 1, dim=0).narrow(dim=0,
+#                                                               start=opt.batch_size,
+#                                                               length=real_data.shape[1])
+# fake_mask = tf.slice(tf.gather(lower_triangular_ones, fake_seqlen - 1),[0, 0], [BATCH_SIZE,tf.shape(fake_data)[1]])
+# real_mask = tf.expand_dims(real_mask,-1)
+# fake_mask = tf.expand_dims(fake_mask,-1)
+
+# length_ = tf.minimum(tf.shape(real_data)[1],tf.shape(fake_data)[1])
+# lipschtiz_divergence = tf.abs(D_real-D_fake)/tf.sqrt(tf.reduce_sum(tf.square(real_data[:,:length_,:]-fake_data[:,:length_,:]), axis=[1,2])+0.00001)
+#
+# lipschtiz_divergence = tf.reduce_mean((lipschtiz_divergence-1)**2)
+# D_loss += LAMBDA_LP*lipschtiz_divergence
+
