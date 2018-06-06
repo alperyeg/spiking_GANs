@@ -1,5 +1,6 @@
 import numpy as np
 import neo
+import quantities as pq
 
 from scipy.misc import factorial
 from quantities import Hz, s, ms
@@ -63,6 +64,36 @@ class DataDistribution(object):
         samples = np.random.poisson(self.lam, size=n)
         samples.sort()
         return samples
+
+    @staticmethod
+    def poisson_stationary_sample(rate=5 * Hz, dt=1 * ms,
+                                  t_stop=1000 * ms, binned=True, num_bins=100,
+                                  num_sts=1):
+        """
+        Returns a non-stationary poisson process with step rate given by `rate`
+
+        :param rate: pq.Quantity rate, e.g. in Hz
+        :param dt: pq.Quantity Sampling period
+        :param t_stop: pq.Quantity End time of the spike train
+        :param binned: bool If the spike trains should be binned
+        :param num_bins: int Number of bins
+        :param num_sts: int Number of spike trains
+        :return: f `binned` is **True** returns binned spiketrains,
+            corresponding spikes, and the rate signal, if `binned` is
+            **False** returns only spikes
+        """
+        if not isinstance(t_stop, pq.Quantity):
+            t_stop = t_stop * ms
+        if not isinstance(rate, pq.Quantity):
+            rate = rate * Hz
+        rate_profile = [rate for _ in range(int(t_stop / dt))]
+        rate_signal = neo.AnalogSignal(signal=rate_profile, units=Hz,
+                                       sampling_period=dt)
+        spikes = poisson_nonstat(rate_signal, N=num_sts)
+        if binned:
+            binned_sts = BinnedSpikeTrain(spikes, num_bins=num_bins)
+            return binned_sts, spikes, rate_signal
+        return spikes
 
     @staticmethod
     def poisson_step_rate(t_start=0 * s, t_stop=100 * s, rate1=5 * Hz,

@@ -31,6 +31,15 @@ from numpy import real
 from torch.utils.data import TensorDataset
 from tensorboardX import SummaryWriter
 
+from Simulate_Poisson import generate_sample, generate_samples_marked
+from data_generation import DataDistribution
+
+try:
+    JOB_ID = int(os.environ['SLURM_JOB_ID'])
+    ARRAY_ID = int(os.environ['SLURM_ARRAY_TASK_ID'])
+except KeyError:
+    ARRAY_ID = 10
+
 # TODO change to config file
 parser = argparse.ArgumentParser()
 parser.add_argument('--dataset', required=False,
@@ -43,7 +52,7 @@ parser.add_argument('--critic_iters', required=False, default=5,
                     help='How many critic iterations per generator iteration')
 parser.add_argument('--batch_size', required=False, default=256)
 parser.add_argument('--max_steps', required=False, default=300)
-parser.add_argument('--iters', required=False, default=2000,
+parser.add_argument('--epochs', required=False, default=25,
                     help='How many generator iterations to train for')
 parser.add_argument('--manualSeed', required=False,
                     default=123, help='set graph-level seed')
@@ -84,12 +93,6 @@ DIM_SIZE = 1
 ngpu = int(opt.ngpu)
 
 
-if opt.data in ['mimic', 'meme', 'citation', 'stock', "mixture1", "mixture2",
-                "mixture3", "mixture4"]:
-    REAL_DATA = True
-else:
-    REAL_DATA = False
-
 if opt.manualSeed is None:
     opt.manualSeed = 123
 print("Random Seed: ", opt.manualSeed)
@@ -99,8 +102,94 @@ if opt.cuda:
     torch.cuda.manual_seed_all(opt.manualSeed)
 
 cudnn.benchmark = True
+if torch.cuda.is_available() and not opt.cuda:
+    print(
+        "WARNING: You have a CUDA device, "
+        "so you should probably run with cuda")
 
-# TODO prepare or load data
+
+# Define a dictionary to save results
+save_dict = {}
+
+# Define writer object for tensorboard
+writer = SummaryWriter(log_dir=os.path.join(opt.outf, 'tensorboard'))
+
+
+def load_data(dataset_name, encoding=False, array_id=10):
+    if encoding:
+        try:
+            fname = dataset_name
+            dat = np.load(fname).item()
+        except (KeyError, FileNotFoundError):
+            fname = './logs/data/data_NS10000_IS64_type-{}_encoded-{}_rate{}.npy'.format(
+                dataset_name, encoding, array_id)
+        print("Loaded dataset: {}".format(fname))
+        norm_data = dat['normed_data']
+        num_samples = len(norm_data)
+        encoded_data = dat['encoded_data']
+        # Convert list to float32
+        tensor_all = torch.from_numpy(
+            np.array(norm_data, dtype=np.float32))
+        raw_tensor = torch.from_numpy(
+            np.array(encoded_data, dtype=np.float32).reshape(num_samples, 1,
+                                                             opt.imageSize,
+                                                             opt.imageSize))
+        save_dict['encoded_data'] = encoded_data
+    else:
+        try:
+            fname = dataset_name
+            dat = np.load(fname).item()
+        except (FileNotFoundError, KeyError):
+            fname = './logs/data/data_NS10000_IS64_type-{0}_rate{1}.npy'.format(
+                dataset_name, array_id)
+            dat = np.load(fname).item()
+        print("Loaded dataset: {}".format(fname))
+        binned_data = dat['binned_data']
+        norm_data = dat['normed_data']
+        num_samples = len(binned_data)
+        # Save original binned data too
+        save_dict['binned_data'] = binned_data
+        # Convert list to float32
+        tensor_all = torch.from_numpy(np.array(norm_data, dtype=np.float32))
+        raw_tensor = torch.from_numpy(np.array(binned_data, dtype=np.float32))
+    # Free space
+    del dat
+    # preprocess(tensor_all)
+    # Define targets as ones
+    # label smoothing, i.e. set labels to 0.9
+    targets = torch.ones(num_samples) - 0.1
+    # Create dataset
+    ds = TensorDataset(tensor_all, targets)
+    return ds, raw_tensor
+
+
+if opt.dataset in ['imagenet', 'folder', 'lfw']:
+    # folder dataset
+    dataset = dset.ImageFolder(root=opt.dataroot,
+                               transform=transforms.Compose([
+                                   transforms.Scale(opt.imageSize),
+                                   transforms.CenterCrop(opt.imageSize),
+                                   transforms.ToTensor(),
+                                   transforms.Normalize((0.5, 0.5, 0.5),
+                                                        (0.5, 0.5, 0.5)),
+                               ]))
+# Load datasets with type (step_rate | variability | pattern | ...)
+else:
+    print('loading data')
+    t = time.time()
+    dataset, tensor_raw = load_data(dataset_name=os.path.join(opt.dataroot,
+                                                              opt.dataname),
+                                    encoding=opt.encoding,
+                                    array_id=ARRAY_ID)
+    print('done loading data, in sec: {}'.format(time.time() - t))
+    vutils.save_image(tensor_raw,
+                      '{}/real_samples_normalized.png'.format(opt.outf),
+                      normalize=True)
+
+assert dataset
+dataloader = torch.utils.data.DataLoader(dataset, batch_size=opt.batchSize,
+                                         shuffle=True,
+                                         num_workers=int(opt.workers))
 
 
 ########################
@@ -130,7 +219,6 @@ class Generator(nn.Module):
         self.state_size = state_size
         self.batch_size = batch_size
 
-
         # RNN
         if cell_type == 'Basic':
             self.rnn = nn.RNN(input_size=state_size, hidden_size=state_size,
@@ -138,9 +226,9 @@ class Generator(nn.Module):
         elif cell_type == 'LSTM':
             self.rnn = nn.LSTM(input_size=state_size, hidden_size=state_size,
                                num_layers=num_layers, nonlinearity='tanh')
-        self.h0, self.c0 = init_hidden(num_layers, self.batch_size, state_size)
+        self.h0, self.c0 = init_hidden(num_layers, batch_size, state_size)
 
-    def forward(self, rnn_inputs, seq_len):
+    def forward(self, rnn_inputs):
         # TODO careful here, check
         num_steps = rnn_inputs.shape[1]
         # TODO: beware, rnn_inputs needs to be a vector of
@@ -271,18 +359,78 @@ def make_one_hot(labels, n_class=2):
         N x C x H x W, where C is class number. One-hot encoded.
     """
     if opt.gpu:
-        one_hot = torch.cuda.FloatTensor(labels.size(0), n_class, labels.size(2),
-                                         labels.size(3)).zero_()
+        y_one_hot = torch.cuda.FloatTensor(labels.size(0), n_class,
+                                           labels.size(2),
+                                           labels.size(3)).zero_()
     else:
-        one_hot = torch.FloatTensor(labels.size(0), n_class, labels.size(2),
-                                    labels.size(3)).zero_()
-    target = one_hot.scatter_(1, labels.data, 1)
+        y_one_hot = torch.FloatTensor(labels.size(0), n_class, labels.size(2),
+                                      labels.size(3)).zero_()
+    target = y_one_hot.scatter_(1, labels.data, 1)
     return target
 
 
+def one_hot(batch_size, classes, dim=1):
+    y = torch.LongTensor(batch_size, 1).random_() % classes
+    y_one_hot = torch.FloatTensor(batch_size, classes)
+    return y_one_hot.scatter_(dim, y, 1)
+
+
+lower_triangular_ones = torch.FloatTensor(
+    np.tril(np.ones([opt.max_steps, opt.max_steps])))
+
+discriminator = Discriminator(lower_triangular_ones, n_gpu=int(opt.ngpu))
+discriminator.apply(weights_init)
+
+generator = Generator(n_gpu=int(opt.ngpu))
+generator.apply(weights_init)
+
+if opt.gen != '':
+    generator.load_state_dict(torch.load(opt.netG))
+print(generator)
+if opt.disc != '':
+    discriminator.load_state_dict(torch.load(opt.netG))
+print(discriminator)
+
+
+# TODO: define labels, noise, optimizer (as empty tensors)
+fake_seqlen = torch.IntTensor(opt.batch_size)
+real_seqlen = torch.IntTensor(opt.batch_size)
+label = torch.FloatTensor(opt.batchSize)
+# label smoothing
+real_label = 0.9    # before 1.0
+fake_label = 0
+
+if opt.cuda:
+    discriminator.cuda()
+    generator.cuda()
+    # criterionD.cuda()
+    # criterionG.cuda()
+    label = label.cuda()
+    # input_, = input_.cuda()
+    # noise, fixed_noise = noise.cuda(), fixed_noise.cuda()
+
+# WGAN Lipschitz constraint
+if opt.mode == 'wgan-lp':
+    # setup optimizer
+    disc_train_op = optim.Adam(discriminator.parameters(), lr=1e-4,
+                               betas=(0.5, 0.9))
+    gen_train_op = optim.Adam(generator.parameters(),
+                              lr=1e-4, betas=(0.5, 0.9))
+
+# # Pre train options #
+# pre train loss
+pre_train_loss = nn.L1Loss()
+# pre train optimizers
+pre_train_optimG = optim.RMSprop(generator.parameters(), lr=5e-5)
+pre_train_optimD = optim.RMSprop(discriminator.parameters(), lr=5e-5)
+
+# TODO training steps, everything else comes below here
 if MARK:
     # TODO
     z_one_hot = make_one_hot()
+    # Z = tf.placeholder(tf.float32, shape=[BATCH_SIZE, None, 2]) # time,dim
+    # Z_one_hot = tf.one_hot( tf.cast(Z[:,:,1],tf.int32),DIM_SIZE )
+    # Z_all = tf.concat([Z[:,:,:1],Z_one_hot],axis=2)
 else:
     # TODO check if correct shape of [batch_size, num_steps]
     z_all = torch.Tensor(opt.batch_size, 1)
@@ -306,47 +454,6 @@ else:
 # else:
 #     X = tf.placeholder(tf.float32, shape=[BATCH_SIZE, None, 1])
 #     real_data = X
-
-lower_triangular_ones = torch.FloatTensor(
-    np.tril(np.ones([opt.max_steps, opt.max_steps])))
-
-discriminator = Discriminator(lower_triangular_ones, n_gpu=int(opt.ngpu))
-discriminator.apply(weights_init)
-
-generator = Generator(n_gpu=int(opt.ngpu))
-generator.apply(weights_init)
-
-if opt.gen != '':
-    generator.load_state_dict(torch.load(opt.netG))
-print(generator)
-if opt.disc != '':
-    discriminator.load_state_dict(torch.load(opt.netG))
-print(discriminator)
-
-
-if opt.cuda:
-    discriminator.cuda()
-    generator.cuda()
-    # criterionD.cuda()
-    # criterionG.cuda()
-    # input_, label = input_.cuda(), label.cuda()
-    # noise, fixed_noise = noise.cuda(), fixed_noise.cuda()
-
-# TODO: define labels, noise, optimizer (as empty tensors)
-fake_seqlen = torch.IntTensor(opt.batch_size)
-fake_data = generator(fake_seqlen)
-
-real_seqlen = torch.IntTensor(opt.batch_size)
-
-
-# WGAN Lipschitz constraint
-if opt.mode == 'wgan-lp':
-    # setup optimizer
-    disc_train_op = optim.Adam(discriminator.parameters(), lr=1e-4,
-                               betas=(0.5, 0.9))
-    gen_train_op = optim.Adam(generator.parameters(), lr=1e-4, betas=(0.5, 0.9))
-
-# TODO training steps, everything else comes below here
 #
 # real_mask = torch.gather(input=torch.Tensor(lower_triangular_ones),
 #                          index=real_seqlen - 1, dim=0).narrow(dim=0,
@@ -362,3 +469,73 @@ if opt.mode == 'wgan-lp':
 # lipschtiz_divergence = tf.reduce_mean((lipschtiz_divergence-1)**2)
 # D_loss += LAMBDA_LP*lipschtiz_divergence
 
+saved_file = "wgan_{}_{}_{}_{}_{}_{}_{}".format(opt.data, opt.seq_num,
+                                                opt.epochs, opt.lambda_lp,
+                                                datetime.now().day,
+                                                datetime.now().hour,
+                                                datetime.now().minute)
+if not os.path.exists('out/%s' % saved_file):
+    os.makedirs('out/%s' % saved_file)
+
+stop_indicator = False
+n_t = 30
+# ts_real, intensity_real = get_intensity(real_sequences, T, n_t)
+
+# pre-train
+if PRE_TRAIN:
+    pre_stop = 40
+    for i, data in enumerate(dataloader):  # 4000
+        # clear gradients
+        discriminator.zero_grad()
+
+        # Train discriminator
+        pre_disc_input = data
+        if opt.cuda:
+            pre_disc_input = pre_disc_input.cuda()
+        # Train with real labels
+        label.resize_(opt.batch_size).fill_(real_label)
+        pre_outputD = discriminator(pre_disc_input, pre_disc_input.shape[1])
+        pre_errD_real = pre_train_loss(pre_outputD, label)
+        pre_errD_real.backward()
+        pre_D_x = pre_outputD.data.mean()
+        # TODO save
+        print(pre_D_x)
+
+        # Train with fake labels
+        label.fill_(fake_label)
+        noise = DataDistribution.poisson_stationary_sample(10, 6000,
+                                                           binned=False)
+        noise = torch.from_numpy(np.array(noise[0]))
+        pre_fake = generator(noise)
+        output = discriminator(pre_fake.detach())
+        pre_errD_fake = pre_train_loss(output, label)
+        pre_errD_fake.backward()
+        pre_D_G_z1 = output.data.mean()
+        pre_errD = pre_errD_real + pre_D_G_z1
+        pre_train_optimD.step()
+        # TODO save pre train values
+
+        # Train Generator
+        # clear gradients
+        generator.zero_grad()
+        label = label.fill_(real_label)
+        output = discriminator(pre_fake)
+        pre_errG = pre_train_loss(output, label)
+        pre_errG.backward()
+        pre_D_G_z2 = output.data.mean()
+        pre_train_optimG.step()
+
+        if i % 10 == 0:
+            print('[{}/{}] pre_train_loss: pre_errD {}, pre_errG {}, '
+                  'pre_D_x {}, pre_G_z1 {}, pre_G_z2 {}'.format(
+                      i, pre_stop, pre_errD.data[0], pre_errG.data[0], pre_D_x,
+                      pre_D_G_z1, pre_D_G_z2))
+
+        # stop pre training
+        if i == pre_stop:
+            break
+
+# Train the GAN
+for epoch in range(opt.epochs):
+    for ci in range(opt.critic_iters):
+        pass
