@@ -53,7 +53,7 @@ parser.add_argument('--lambda_lp', required=False, default=0.1,
                     help='Penalty for Lipschtiz divergence')
 parser.add_argument('--critic_iters', required=False, default=5,
                     help='How many critic iterations per generator iteration')
-parser.add_argument('--batch_size', required=False, default=256)
+parser.add_argument('--batch_size', required=False, default=256, type=int)
 parser.add_argument('--max_steps', required=False, default=300)
 parser.add_argument('--epochs', required=False, default=25,
                     help='How many generator iterations to train for')
@@ -79,16 +79,16 @@ parser.add_argument('--disc', default='',
 parser.add_argument('--outf', default='./logs/run_{}_rate{}'.format(
     datetime.datetime.now().strftime("%Y-%m-%d_%H-%M"), ARRAY_ID),
                     help='folder to output images and model checkpoints')
+parser.add_argument('--encoding', type=bool, help='load encoded data',
+                    default=False)
+parser.add_argument('--workers', type=int,
+                    help='number of data loading workers', default=2)
 
 opt = parser.parse_args()
 with open('params.yaml', 'r') as stream:
     try:
         params = yaml.load(stream)
         print(params)
-        outf = './logs/run_{}_rate{}'.format(
-            datetime.datetime.now().strftime("%Y-%m-%d_%H-%M"), ARRAY_ID)
-        with open(os.path.join(outf, 'params.yaml'), 'w') as f:
-            yaml.dump(params, f)
     except yaml.YAMLError as err:
         print(err)
 print(opt)
@@ -148,8 +148,8 @@ def load_data(dataset_name, encoding=False, array_id=10):
             np.array(norm_data, dtype=np.float32))
         raw_tensor = torch.from_numpy(
             np.array(encoded_data, dtype=np.float32).reshape(num_samples, 1,
-                                                             opt.imageSize,
-                                                             opt.imageSize))
+                                                             opt.batch_size,
+                                                             opt.batch_size))
         save_dict['encoded_data'] = encoded_data
     else:
         try:
@@ -203,7 +203,7 @@ else:
                       normalize=True)
 
 assert dataset
-dataloader = torch.utils.data.DataLoader(dataset, batch_size=opt.batchSize,
+dataloader = torch.utils.data.DataLoader(dataset, batch_size=opt.batch_size,
                                          shuffle=True,
                                          num_workers=int(opt.workers))
 
@@ -241,7 +241,7 @@ class Generator(nn.Module):
                               num_layers=num_layers, nonlinearity='tanh')
         elif cell_type == 'LSTM':
             self.rnn = nn.LSTM(input_size=state_size, hidden_size=state_size,
-                               num_layers=num_layers, nonlinearity='tanh')
+                               num_layers=num_layers)
         self.h0, self.c0 = init_hidden(num_layers, batch_size, state_size)
 
     def forward(self, rnn_inputs):
@@ -296,7 +296,8 @@ class Discriminator(nn.Module):
                  state_size=64,
                  batch_size=opt.batch_size,
                  cost_all=COST_ALL,
-                 n_gpu=1):
+                 n_gpu=1,
+                 ):
         super(Discriminator, self).__init__()
         self.n_gpu = n_gpu
         self.num_layers = num_layers
@@ -305,7 +306,7 @@ class Discriminator(nn.Module):
         self.cost_all = cost_all
         self.lower_triangular_ones = lower_triangular
 
-        keep_prob = torch.FloatTensor([0.9])
+        keep_prob = 0.9
 
         # RNN
         if cell_type == 'Basic':
@@ -313,8 +314,7 @@ class Discriminator(nn.Module):
                               num_layers=num_layers, nonlinearity='tanh')
         elif cell_type == 'LSTM':
             self.rnn = nn.LSTM(input_size=state_size, hidden_size=state_size,
-                               num_layers=num_layers, nonlinearity='tanh',
-                               dropout=keep_prob)
+                               num_layers=num_layers, dropout=keep_prob)
         self.h0, self.c0 = init_hidden(num_layers, self.batch_size, state_size)
         self.dropout = nn.Dropout(p=keep_prob)
 
@@ -420,7 +420,7 @@ print(discriminator)
 # TODO: define labels, noise, optimizer (as empty tensors)
 fake_seqlen = torch.IntTensor(opt.batch_size)
 real_seqlen = torch.IntTensor(opt.batch_size)
-label = torch.FloatTensor(opt.batchSize)
+label = torch.FloatTensor(opt.batch_size)
 # label smoothing
 real_label = 0.9    # before 1.0
 fake_label = 0
@@ -489,13 +489,13 @@ else:
 # real_mask = tf.expand_dims(real_mask,-1)
 # fake_mask = tf.expand_dims(fake_mask,-1)
 
-saved_file = "wgan_{}_{}_{}_{}_{}_{}_{}".format(opt.data, opt.seq_num,
-                                                opt.epochs, opt.lambda_lp,
-                                                datetime.now().day,
-                                                datetime.now().hour,
-                                                datetime.now().minute)
-if not os.path.exists('out/%s' % saved_file):
-    os.makedirs('out/%s' % saved_file)
+# saved_file = "wgan_{}_{}_{}_{}_{}_{}_{}".format(opt.data, opt.seq_num,
+#                                                 opt.epochs, opt.lambda_lp,
+#                                                 datetime.now().day,
+#                                                 datetime.now().hour,
+#                                                 datetime.now().minute)
+# if not os.path.exists('out/%s' % saved_file):
+#     os.makedirs('out/%s' % saved_file)
 
 stop_indicator = False
 n_t = 30
@@ -562,6 +562,8 @@ if PRE_TRAIN:
 
 # Train the GAN
 for epoch in range(opt.epochs):
+    # also possible data_iter = iter(dataloader); data = data_iter.next(),
+    # then add random sampler
     for i, data in enumerate(dataloader):
         # reset requires_grad
         # set to False below in generator update
@@ -634,3 +636,8 @@ for epoch in range(opt.epochs):
                '%s/generator_epoch_%d.pth' % (checkpoint_path, epoch))
     torch.save(discriminator.state_dict(),
                '%s/discriminator_epoch_%d.pth' % (checkpoint_path, epoch))
+
+outf = './logs/run_{}_rate{}'.format(
+    datetime.datetime.now().strftime("%Y-%m-%d_%H-%M"), ARRAY_ID)
+with open(os.path.join(outf, 'params.yaml'), 'w') as f:
+    yaml.dump(params, f)
