@@ -24,10 +24,9 @@ import torch.utils.data
 import torchvision.datasets as dset
 import torchvision.transforms as transforms
 import torchvision.utils as vutils
+import datetime
 
-from datetime import datetime
-
-from numpy import real
+from torch.autograd import Variable
 from torch.utils.data import TensorDataset
 from tensorboardX import SummaryWriter
 
@@ -46,6 +45,10 @@ parser.add_argument('--dataset', required=False,
                     help='cifar10 | lsun | imagenet | folder | lfw | fake | '
                          'step_rate | variability | pattern',
                     default='step_rate')
+parser.add_argument('--dataroot', required=False, help='path to dataset')
+parser.add_argument('--dataname', required=False,
+                    help='Name of dataset, use together with dataroot to '
+                         'navigate to the dataset', type=str)
 parser.add_argument('--lambda_lp', required=False, default=0.1,
                     help='Penalty for Lipschtiz divergence')
 parser.add_argument('--critic_iters', required=False, default=5,
@@ -53,6 +56,8 @@ parser.add_argument('--critic_iters', required=False, default=5,
 parser.add_argument('--batch_size', required=False, default=256)
 parser.add_argument('--max_steps', required=False, default=300)
 parser.add_argument('--epochs', required=False, default=25,
+                    help='How many generator iterations to train for')
+parser.add_argument('--iters', required=False, default=20000,
                     help='How many generator iterations to train for')
 parser.add_argument('--manualSeed', required=False,
                     default=123, help='set graph-level seed')
@@ -71,12 +76,19 @@ parser.add_argument('--gen', default='',
                     help="path to Generator (to continue training)")
 parser.add_argument('--disc', default='',
                     help="path to Discriminator (to continue training)")
+parser.add_argument('--outf', default='./logs/run_{}_rate{}'.format(
+    datetime.datetime.now().strftime("%Y-%m-%d_%H-%M"), ARRAY_ID),
+                    help='folder to output images and model checkpoints')
 
 opt = parser.parse_args()
 with open('params.yaml', 'r') as stream:
     try:
         params = yaml.load(stream)
         print(params)
+        outf = './logs/run_{}_rate{}'.format(
+            datetime.datetime.now().strftime("%Y-%m-%d_%H-%M"), ARRAY_ID)
+        with open(os.path.join(outf, 'params.yaml'), 'w') as f:
+            yaml.dump(params, f)
     except yaml.YAMLError as err:
         print(err)
 print(opt)
@@ -92,6 +104,10 @@ ITERATION = 0
 DIM_SIZE = 1
 ngpu = int(opt.ngpu)
 
+# Cuda
+# cuda_available = torch.cuda.is_available()
+# device = torch.device("cuda" if cuda_available else "cpu")
+# tensor = tensor.to(device)
 
 if opt.manualSeed is None:
     opt.manualSeed = 123
@@ -196,7 +212,7 @@ dataloader = torch.utils.data.DataLoader(dataset, batch_size=opt.batchSize,
 # define models
 ########################
 # TODO check if weights are correctly initialized
-# custom weights initialization called on netG and netD
+# custom weights initialization called on discriminator and generator
 def weights_init(m):
     classname = m.__class__.__name__
     if classname.find('softmax') != -1:
@@ -375,6 +391,15 @@ def one_hot(batch_size, classes, dim=1):
     return y_one_hot.scatter_(dim, y, 1)
 
 
+def lipschitz_divergence(real_data, fake_data, d_real, d_fake):
+    length_ = min(real_data.shape[1], fake_data.shape[1])
+    # Apply the Lipschitz constraint
+    # TODO check/correct dimensions
+    ld = torch.abs(d_real - d_fake / torch.sqrt(torch.sum((real_data[:, :length_, :] - fake_data[:, :length_, :])**2) + 0.00001))
+    ld = torch.mean((ld - 1) ** 2)
+    return ld
+
+
 lower_triangular_ones = torch.FloatTensor(
     np.tril(np.ones([opt.max_steps, opt.max_steps])))
 
@@ -385,10 +410,10 @@ generator = Generator(n_gpu=int(opt.ngpu))
 generator.apply(weights_init)
 
 if opt.gen != '':
-    generator.load_state_dict(torch.load(opt.netG))
+    generator.load_state_dict(torch.load(opt.gen))
 print(generator)
 if opt.disc != '':
-    discriminator.load_state_dict(torch.load(opt.netG))
+    discriminator.load_state_dict(torch.load(opt.disc))
 print(discriminator)
 
 
@@ -399,6 +424,9 @@ label = torch.FloatTensor(opt.batchSize)
 # label smoothing
 real_label = 0.9    # before 1.0
 fake_label = 0
+one = torch.FloatTensor([1])
+mone = one * -1
+fixed_noise = torch.FloatTensor(opt.batch_size)
 
 if opt.cuda:
     discriminator.cuda()
@@ -408,14 +436,12 @@ if opt.cuda:
     label = label.cuda()
     # input_, = input_.cuda()
     # noise, fixed_noise = noise.cuda(), fixed_noise.cuda()
+    one = one.cuda()
+    mone = mone.cuda()
 
-# WGAN Lipschitz constraint
-if opt.mode == 'wgan-lp':
-    # setup optimizer
-    disc_train_op = optim.Adam(discriminator.parameters(), lr=1e-4,
-                               betas=(0.5, 0.9))
-    gen_train_op = optim.Adam(generator.parameters(),
-                              lr=1e-4, betas=(0.5, 0.9))
+# setup optimizer
+optimizerD = optim.Adam(discriminator.parameters(), lr=1e-4, betas=(0.5, 0.9))
+optimizerG = optim.Adam(generator.parameters(), lr=1e-4, betas=(0.5, 0.9))
 
 # # Pre train options #
 # pre train loss
@@ -463,12 +489,6 @@ else:
 # real_mask = tf.expand_dims(real_mask,-1)
 # fake_mask = tf.expand_dims(fake_mask,-1)
 
-# length_ = tf.minimum(tf.shape(real_data)[1],tf.shape(fake_data)[1])
-# lipschtiz_divergence = tf.abs(D_real-D_fake)/tf.sqrt(tf.reduce_sum(tf.square(real_data[:,:length_,:]-fake_data[:,:length_,:]), axis=[1,2])+0.00001)
-#
-# lipschtiz_divergence = tf.reduce_mean((lipschtiz_divergence-1)**2)
-# D_loss += LAMBDA_LP*lipschtiz_divergence
-
 saved_file = "wgan_{}_{}_{}_{}_{}_{}_{}".format(opt.data, opt.seq_num,
                                                 opt.epochs, opt.lambda_lp,
                                                 datetime.now().day,
@@ -484,7 +504,7 @@ n_t = 30
 # pre-train
 if PRE_TRAIN:
     pre_stop = 40
-    for i, data in enumerate(dataloader):  # 4000
+    for i, data in enumerate(dataloader):
         # clear gradients
         discriminator.zero_grad()
 
@@ -492,9 +512,11 @@ if PRE_TRAIN:
         pre_disc_input = data
         if opt.cuda:
             pre_disc_input = pre_disc_input.cuda()
+        # TODO could also try to wrap with torch.Tensor
+        pre_disc_inputv = Variable(pre_disc_input)
         # Train with real labels
         label.resize_(opt.batch_size).fill_(real_label)
-        pre_outputD = discriminator(pre_disc_input, pre_disc_input.shape[1])
+        pre_outputD = discriminator(pre_disc_inputv, pre_disc_inputv.shape[1])
         pre_errD_real = pre_train_loss(pre_outputD, label)
         pre_errD_real.backward()
         pre_D_x = pre_outputD.data.mean()
@@ -505,7 +527,10 @@ if PRE_TRAIN:
         label.fill_(fake_label)
         noise = DataDistribution.poisson_stationary_sample(10, 6000,
                                                            binned=False)
-        noise = torch.from_numpy(np.array(noise[0]))
+        with torch.no_grad:
+            # totally freeze G, training D
+            noise = torch.from_numpy(np.array(noise[0]))
+        # generate fake with generator
         pre_fake = generator(noise)
         output = discriminator(pre_fake.detach())
         pre_errD_fake = pre_train_loss(output, label)
@@ -537,5 +562,75 @@ if PRE_TRAIN:
 
 # Train the GAN
 for epoch in range(opt.epochs):
-    for ci in range(opt.critic_iters):
-        pass
+    for i, data in enumerate(dataloader):
+        # reset requires_grad
+        # set to False below in generator update
+        for p in discriminator.parameters():
+            p.requires_grad = False
+        # clear gradients
+        discriminator.zero_grad()
+
+        # Train discriminator (critic)
+        # TODO maybe train the discriminator a few steps more (critic_iters)
+        input_ = data
+        if opt.cuda:
+            input_ = input_.cuda()
+        inputv = Variable(input_)
+        # Train with real
+        label.resize_(opt.batch_size).fill_(real_label)
+        errD_real = discriminator(inputv, inputv.shape[1])
+        errD_real = errD_real.mean()
+        errD_real.backward(mone)
+
+        # Train with fake
+        noise = DataDistribution.poisson_stationary_sample(10, 6000,
+                                                           binned=False)
+        with torch.no_grad:
+            # totally freeze G, training D
+            noise = torch.from_numpy(np.array(noise[0]))
+        # generate fake with generator
+        fake = generator(noise)
+        errD_fake = discriminator(fake.detach())
+        errD_fake = errD_fake.mean()
+        errD_fake.backward(one)
+        lipschitz_div = lipschitz_divergence(inputv, noise, errD_real,
+                                             errD_fake)
+        errD = errD_fake - errD_real + opt.labda_lp * lipschitz_div
+        optimizerD.step()
+
+        ############################
+        # (2) Update G network
+        ###########################
+        for p in discriminator.parameters():
+            p.requires_grad = False
+        generator.zero_grad()
+        errG = discriminator(fake)
+        errG = errG.mean()
+        errG.backward(mone)
+        gen_cost = -errG
+        optimizerG.step()
+
+        print('[{}/{}] train_loss: errD {}, errG {}, errD_fake {}'
+              ', errD_real {} gen_cost {}'.format(i, len(dataloader),
+                                                  errD.data[0],
+                                                  errG.data[0], errD_fake,
+                                                  errD_real, gen_cost))
+        if i % 100 == 0:
+            fake = generator(fixed_noise)
+            vutils.save_image(fake.data,
+                              '%s/fake_samples_normalized_epoch_%03d.png' % (
+                                  opt.outf, epoch),
+                              normalize=True)
+            vutils.save_image(fake.data,
+                              '%s/fake_samples_epoch_%03d.png' % (
+                                  opt.outf, epoch),
+                              normalize=False)
+
+    # do checkpointing
+    checkpoint_path = os.path.join(opt.outf, 'checkpoints')
+    if not os.path.exists(checkpoint_path):
+        os.mkdir(checkpoint_path)
+    torch.save(generator.state_dict(),
+               '%s/generator_epoch_%d.pth' % (checkpoint_path, epoch))
+    torch.save(discriminator.state_dict(),
+               '%s/discriminator_epoch_%d.pth' % (checkpoint_path, epoch))
