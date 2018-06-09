@@ -249,7 +249,7 @@ class Generator(nn.Module):
         num_steps = rnn_inputs.shape[1]
         # TODO: beware, rnn_inputs needs to be a vector of
         # shape (seq_len, batch_input_size)
-        output, hidden = self.rnn(self.rnn_inputs, (self.h0, self.c0))
+        output, hidden = self.rnn(rnn_inputs, (self.h0, self.c0))
         # add softmax layer
         # TODO check in corresponding tf code following line
         # also possible: self.softmax = nn.Softmax(dim=0);
@@ -322,10 +322,10 @@ class Discriminator(nn.Module):
         # TODO careful here, check
         num_steps = rnn_inputs.shape[1]
 
-        output, hidden = self.rnn(self.rnn_inputs, (self.h0, self.c0))
+        out, hidden = self.rnn(rnn_inputs, (self.h0, self.c0))
 
         # Add dropout
-        rnn_outputs = self.dropout(output)
+        rnn_outputs = self.dropout(out)
         # reshape rnn_outputs
         rnn_outputs = torch.reshape(rnn_outputs, (-1, self.state_size))
 
@@ -509,7 +509,7 @@ if PRE_TRAIN:
         discriminator.zero_grad()
 
         # Train discriminator
-        pre_disc_input = data
+        pre_disc_input, _ = data
         if opt.cuda:
             pre_disc_input = pre_disc_input.cuda()
         # TODO could also try to wrap with torch.Tensor
