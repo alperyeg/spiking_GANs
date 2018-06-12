@@ -6,6 +6,7 @@ import neo
 
 from collections import Counter
 
+
 def save(ckpt_dir, step, saver, sess, model_name):
     if not os.path.exists(ckpt_dir):
         os.makedirs(ckpt_dir)
@@ -73,7 +74,8 @@ def _check_nonunique_spikes(spiketrain, num_spikes):
     return unique
 
 
-def encode_input(spiketrains, rows, columns, dt=1 * pq.ms, refrac=2 * pq.ms):
+def encode_input(spiketrains, rows, columns, dt=1 * pq.ms, refrac=2 * pq.ms,
+                 fill=None):
     # TODO more documentation
     # TODO optimize?
     """
@@ -83,11 +85,14 @@ def encode_input(spiketrains, rows, columns, dt=1 * pq.ms, refrac=2 * pq.ms):
     :param rows: Size of the rows of matrix `M`
     :param columns: Size of the columns of matrix `M`
     :param dt: quantity object: Time resolution of the step to go
+    :param fill: float: value for inserting instead of copying the previous
+        spike time
     :return: Encoded matrix `M`
     """
     M = np.zeros((rows, columns))
     if not isinstance(dt, pq.Quantity):
-        raise ValueError("dt must be a Quantity object")
+        print("dt must be a Quantity object")
+        dt = dt * spiketrains[0].units
     else:
         dt = dt.rescale(spiketrains[0].units)
     refrac = refrac.rescale(dt.units)
@@ -114,7 +119,7 @@ def encode_input(spiketrains, rows, columns, dt=1 * pq.ms, refrac=2 * pq.ms):
                 else:
                     # copy if smaller
                     if res + steps < spk[s]:
-                        M[i, j] = res
+                        M[i, j] = fill if fill is not None else res
                         steps += dt
                     else:
                         # check for refractory period violation
@@ -123,11 +128,11 @@ def encode_input(spiketrains, rows, columns, dt=1 * pq.ms, refrac=2 * pq.ms):
                             res = spk[s]
                             steps = dt
                         else:
-                            M[i, j] = res
+                            M[i, j] = fill if fill is not None else res
                             steps += dt
                         s += 1
             else:
-                M[i, j] = res
+                M[i, j] = fill if fill is not None else res
     return M
 
 
@@ -168,10 +173,9 @@ def encoder(spiketrains, cols, dt, min_spikes=32):
 
 def decode(data, rho, step):
     """
-    Decodes the encoded input `data`. 
-    Returns the mask. 
+    Decodes the encoded input `data`.
+    Returns the mask.
     """
     diff = np.diff(data) >= step / rho
-    data = data[:,:-1]
+    data = data[:, :-1]
     return data, diff
-
