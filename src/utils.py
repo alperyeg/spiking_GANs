@@ -132,11 +132,11 @@ def encode_input(spiketrains, rows, columns, dt=1 * pq.ms, refrac=2 * pq.ms,
                             steps += dt
                         s += 1
             else:
-                M[i, j] = fill if fill is not None else res
+                M[i, j] = res
     return M
 
 
-def encoder(spiketrains, cols, dt, min_spikes=32):
+def encoder(spiketrains, cols, dt, min_spikes=32, fill=None):
     # TODO type of sliding window, atm not sliding, rather jumping
     # TODO add possibility to calculate dt: cols/max_spike
     """
@@ -146,8 +146,10 @@ def encoder(spiketrains, cols, dt, min_spikes=32):
     :param cols: number of columns for the matrix
     :param dt: time resolution
     :param min_spikes: minimum number of spikes inside the matrix to be
-        considered, results with less than `cols * min_spikes` will not be
+        considered, results with less than `min_spikes` will not be
         returned, Default is 32
+    :param fill: float: value for inserting instead of copying the previous
+        spike time
     :return: ms: list of encoded matrices, shape: `[windows, len(spiketrains),
     cols]`, where `windows` is the number of windows to cover all spikes with
     for `cols` size
@@ -162,12 +164,12 @@ def encoder(spiketrains, cols, dt, min_spikes=32):
     windows = int(
         np.ceil(
             longest_spiketrain / (cols * dt.rescale(spiketrains[0].units))))
-    en = encode_input(spiketrains, rows, windows * cols, dt)
+    en = encode_input(spiketrains, rows, windows * cols, dt, fill=fill)
     # store all encoded inputs
     ms = []
     # add only spike trains with at least `min_spikes` unique spikes
     [ms.append(en[:, w * cols:cols * (w + 1)]) for w in range(windows) if
-     len(np.unique(en[:, w * cols:cols * (w + 1)])) > cols * min_spikes]
+     len(np.unique(en[:, w * cols:cols * (w + 1)])) > rows * min_spikes]
     return ms
 
 
