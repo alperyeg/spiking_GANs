@@ -5,7 +5,9 @@ import quantities as pq
 import utils
 import argparse
 import uuid
+import multiprocessing as mp
 from data_generation import DataDistribution
+from STP_generation import generate_sts
 from utils import encoder
 
 
@@ -71,63 +73,74 @@ def generate_data(data_type, encode=False):
                                                 binned=(not encode))
     elif data_type == 'pattern':
         d = DataDistribution.generate_stp_data(n_neurons=64, rate=10 * pq.Hz,
-                                               occurr=5, xi=20, t_stop=6 * pq.s,
+                                               occurr=5, xi=20,
+                                               t_stop=6 * pq.s,
                                                delay=0 * pq.ms)
         d = d['data']
     return d
 
 
-for i in range(num_samples):
-    if opt.generate:
-        data = generate_data(data_type=opt.data_type, encode=opt.encoding)
-        if opt.encoding:
-            raw_data.append(data)
-            encoded_data.extend(encoder(data, imageSize, 200 * pq.ms, 10))
+if __name__ == '__main__':
+    with mp.Pool(mp.cpu_count()) as pool:
+        t = time.time()
+        if opt.generate:
+            data_all = [pool.apply_async(generate_data, args=(opt.data_type,
+                                                              opt.encoding))
+                        for i in range(num_samples)]
+            # data = generate_data(data_type=opt.data_type,
+            # encode=opt.encoding)
+            if opt.encoding:
+                for data in data_all:
+                    raw_data.append(data.get())
+                    encoded_data.extend(
+                        encoder(data.get(), imageSize, 200 * pq.ms, 20,
+                                fill=0.0))
+            else:
+                for i, data in enumerate(data_all):
+                    dat = data[0].to_array().ravel()
+                    raw_data.append(data[1])
+                    # Reshape to required format
+                    dat = dat.reshape((1, imageSize, imageSize))
+                    binned_data[i] = dat
+                    # Normalize data
+                    dat = np.divide(dat, np.max(dat))
+                    # data = (data - data.mean()) / data.std()
+                    norm_data[i] = dat
         else:
-            dat = data[0].to_array().ravel()
-            raw_data.append(data[1])
-            # Reshape to required format
-            dat = dat.reshape((1, imageSize, imageSize))
-            binned_data[i] = dat
-            # Normalize data
-            dat = np.divide(dat, np.max(dat))
-            # data = (data - data.mean()) / data.std()
-            norm_data[i] = dat
+            # TODO load data
+            pass
+        print('done generating data, in sec: {}'.format(time.time() - t))
+
+    if opt.encoding:
+        norm_data = np.empty((len(encoded_data), 1, imageSize, imageSize),
+                             dtype=np.float32)
+        norm_value = []
+        for i, ed in enumerate(encoded_data):
+            dat = np.array(ed).reshape((1, imageSize, imageSize))
+            norm_data[i] = np.divide(dat, np.max(dat))
+            norm_value.append(np.max(dat))
+        save_dict['normed_data'] = norm_data
+        save_dict['num_samples'] = num_samples
+        save_dict['imageSize'] = imageSize
+        save_dict['spikes'] = raw_data[:100]
+        save_dict['encoded_data'] = encoded_data
+        save_dict['normed_values'] = norm_value
+
     else:
-        # TODO load data
-        pass
-print('done generating data, in sec: {}'.format(time.time() - t))
+        save_dict['binned_data'] = binned_data
+        save_dict['normed_data'] = norm_data
+        save_dict['num_samples'] = num_samples
+        save_dict['imageSize'] = imageSize
+        save_dict['spikes'] = raw_data
+        save_dict['data_type'] = opt.data_type
 
-
-if opt.encoding:
-    norm_data = np.empty((len(encoded_data), 1, imageSize, imageSize),
-                         dtype=np.float32)
-    norm_value = []
-    for i, ed in enumerate(encoded_data):
-        dat = np.array(ed).reshape((1, imageSize, imageSize))
-        norm_data[i] = np.divide(dat, np.max(dat))
-        norm_value.append(np.max(dat))
-    save_dict['normed_data'] = norm_data
-    save_dict['num_samples'] = num_samples
-    save_dict['imageSize'] = imageSize
-    save_dict['spikes'] = raw_data[:100]
-    save_dict['encoded_data'] = encoded_data
-    save_dict['normed_values'] = norm_value
-
-else:
-    save_dict['binned_data'] = binned_data
-    save_dict['normed_data'] = norm_data
-    save_dict['num_samples'] = num_samples
-    save_dict['imageSize'] = imageSize
-    save_dict['spikes'] = raw_data
-    save_dict['data_type'] = opt.data_type
-
-if opt.filename:
-    fname = opt.filename
-else:
-    fname = 'data_NS{}_IS{}_type-{}_encoded-{}_rate{}.npy'.format(
-                       num_samples, imageSize, opt.data_type, opt.encoding,
-                       ARRAY_ID)
-u = str(uuid.uuid4())
-path = os.path.join(opt.path, u)
-utils.save_samples(save_dict, path=path, filename=fname)
+    if opt.filename:
+        fname = opt.filename
+    else:
+        fname = 'data_NS{}_IS{}_type-{}_encoded-{}_rate{}.npy'.format(
+                           num_samples, imageSize, opt.data_type, opt.encoding,
+                           ARRAY_ID)
+    u = str(uuid.uuid4())
+    path = os.path.join(opt.path, u)
+    utils.save_samples(save_dict, path=path, filename=fname)
+    print(norm_data)

@@ -10,7 +10,7 @@ from elephant.conversion import BinnedSpikeTrain
 from stocmod import poisson_nonstat
 from STP_generation import generate_sts, generate_stp
 
-np.random.seed(123)
+# np.random.seed(123)
 
 
 class DataDistribution(object):
