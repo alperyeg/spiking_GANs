@@ -1,0 +1,36 @@
+from plotting import plot_generated_dot_display_joint
+configfile: "config.yaml"
+
+rule all:
+    input:
+        "{save_path}data_NS{ns}_IS{IS}_type-{dtype}_encoded-{enc}_rate{rate}.npy".format(
+            ns=config['num_samples'], save_path=config['save_data_path'], IS=config['imageSize'],
+            dtype=config['data_type'], enc=config['encoding'], rate=config['rate']),
+        dynamic("logs/run_{date}/results.npy"),
+        "generated_spikes.eps"
+
+rule save_data:
+    input:
+        "config.yaml"
+    output:
+        "{save_path}data_NS{ns}_IS{IS}_type-{dtype}_encoded-{enc}_rate{rate}.npy"
+    shell:
+        "python save_data.py --generate {gen} --encoding {enc} --data_type {dtype}".format(
+            gen=config['generate'], dtype=config['data_type'], enc=config['encoding'], rate=config['rate'])
+
+rule dcgan_train:
+    input:
+        "{wildcards.save_path}data_NS{wildcards.ns}_IS{wildcards.IS}_type-{wildcards.dtype}_encoded-{wildcards.enc}_rate{wildcards.rate}.npy"
+    output:
+        dynamic("logs/run_{date}/results.npy")
+    shell:
+        "python dcgan_spikes_torch.py --generate {gen} --encoding {enc} --data_type {dtype}".format(
+            gen=config['generate'], dtype=config['data_type'], enc=config['encoding'])
+
+rule plot_figs:
+    input:
+        dynamic("logs/run_{date}/results.npy")
+    output:
+        "generated_spikes.eps"
+    shell:
+        "python logs/run_plots.py"
