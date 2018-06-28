@@ -72,6 +72,7 @@ def generate_data(data_type, encode=False):
                                                 num_sts=64,
                                                 binned=(not encode))
     elif data_type == 'pattern':
+        np.random.seed(os.getpid())
         d = DataDistribution.generate_stp_data(n_neurons=64, rate=10 * pq.Hz,
                                                occurr=5, xi=20,
                                                t_stop=6 * pq.s,
@@ -143,4 +144,3 @@ if __name__ == '__main__':
     u = str(uuid.uuid4())
     path = os.path.join(opt.path, u)
     utils.save_samples(save_dict, path=path, filename=fname)
-    print(norm_data)
