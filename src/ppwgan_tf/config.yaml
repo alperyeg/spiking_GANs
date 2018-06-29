@@ -1,8 +1,0 @@
-data_type: 'step_rate'    # variability | pattern
-encoding: True
-generate: True
-filename: ''
-save_data_path: 'logs/data/'
-imageSize: 64
-rate: 10
-num_samples: 10000
