@@ -3,10 +3,9 @@ from __future__ import division
 from __future__ import print_function
 
 import numpy as np
-import matplotlib.pyplot as plt
 
 from datetime import datetime
-# import time
+import time
 import pickle
 import os.path
 import tensorflow as tf
@@ -23,36 +22,37 @@ from elephant.spike_train_generation import homogeneous_poisson_process
 from Utils import \
     sequence_filter  # , lambda_estimation, file2sequence, sequence2file
 
-# matplotlib.use('agg')
+import matplotlib
+matplotlib.use('agg')
+import matplotlib.pyplot as plt
 
 ##############################################################################
 # parameters
-with open('params.yaml', 'r') as stream:
+with open('config.yaml', 'r') as stream:
     try:
         params = yaml.load(stream)
         print(params)
     except yaml.YAMLError as err:
         print(err)
 
-# TODO instead hardcoding here use config.yaml
-MODE = 'wgan-lp'  # wgan-lp
-DATA = 'hawkes'  # hawkes, selfcorrecting, gaussian, rnn
-LAMBDA_LP = 0.1  # Penality for Lipschtiz divergence
-CRITIC_ITERS = 5  # How many critic iterations per generator iteration
-BATCH_SIZE = 16  # Batch size
-MAX_STEPS = 300
-ITERS = 20  # how many generator iterations to train for
-SEED = 1234  # set graph-level seed
-SET_SEED = False
-PRE_TRAIN = True
-COST_ALL = True
-G_DIFF = True
-D_DIFF = True
-MARK = False
-ITERATION = 0
-T = 15.0  # end time of simulation
-SEQ_NUM = 100  # number of sequences
-DIM_SIZE = 1
+MODE = params['mode']  # wgan-lp
+DATA = params['data']  # hawkes, selfcorrecting, gaussian, rnn
+LAMBDA_LP = params['lambda_lp']  # Penality for Lipschtiz divergence
+CRITIC_ITERS = params['critic_iters'] # How many critic iterations per generator iteration
+BATCH_SIZE = params['batch_size']  # Batch size
+MAX_STEPS = params['max_steps']
+ITERS = params['iters']  # how many generator iterations to train for
+SEED = params['manualSeed']  # set graph-level seed
+SET_SEED = params['set_seed']
+PRE_TRAIN = params['pre_train']
+COST_ALL = params['cost_all']
+G_DIFF = params['g_diff']
+D_DIFF = params['d_diff']
+MARK = params['mark']
+ITERATION = params['iteration']
+T = params['T']  # end time of simulation
+SEQ_NUM = params['seq_num']  # number of sequences
+DIM_SIZE = params['dim_size']
 
 # DATA = sys.argv[1]
 # SEQ_NUM = int(float(sys.argv[2]))
@@ -76,8 +76,12 @@ if SET_SEED:
 
 FILE_NAME = 'pickled_data_{}'.format(DATA)
 if not os.path.isfile(FILE_NAME):
+    t = time.time()
     dat = np.load(DATA_PATH).item()
-    real_sequences = dat['spikes']
+    print('loading data done in {}'.format(time.time() - t))
+    real_sequences = []
+    for s in dat['spikes']:
+        real_sequences.extend(s)
     # intensityPoisson = IntensityHomogenuosPoisson(lambda0)
     fake_sequences = [homogeneous_poisson_process(
         10 * pq.Hz, t_start=0 * pq.ms, t_stop=6000 * pq.ms)
@@ -312,8 +316,8 @@ if MODE == 'wgan-lp':
 saved_file = "wgan_{}_{}_{}_{}_{}_{}_{}".format(
     DATA, SEQ_NUM, ITERATION, LAMBDA_LP, datetime.now().day,
     datetime.now().hour, datetime.now().minute)
-if not os.path.exists('out/%s' % saved_file):
-    os.makedirs('out/%s' % saved_file)
+if not os.path.exists('logs/out/%s' % saved_file):
+    os.makedirs('logs/out/%s' % saved_file)
 
 gpu_options = tf.GPUOptions(
     per_process_gpu_memory_fraction=1.0, allow_growth=True)
@@ -332,7 +336,7 @@ ts_real, intensity_real = get_intensity(real_sequences, T, n_t)
 
 # pre-train
 if PRE_TRAIN:
-    for it in range(40):  # 4000
+    for it in range(80):  # 4000
         real_batch = real_iterator.next_batch(BATCH_SIZE)
         fake_batch = fake_iterator.next_batch(BATCH_SIZE)
         pre_loss_curr, _ = sess.run([pre_train_loss, pre_train_op],
@@ -372,7 +376,7 @@ for it in range(ITERS):
             fig = sm.qqplot(integral_intensity, stats.expon,
                             distargs=(), loc=0, scale=1, line='45')
             plt.grid()
-            fig.savefig('out/{}/real.png'.format(saved_file))
+            fig.savefig('logs/out/{}/real.png'.format(saved_file))
             plt.close()
 
     if it % 1000 == 0:
@@ -401,7 +405,7 @@ for it in range(ITERS):
         plt.legend(loc=1)
         plt.xlabel('time')
         plt.ylabel('intensity')
-        plt.savefig('out/{}/{}_{}.png'
+        plt.savefig('logs/out/{}/{}_{}.png'
                     .format(saved_file, str(it).zfill(3), deviation),
                     bbox_inches='tight')
         plt.close()
@@ -414,7 +418,7 @@ for it in range(ITERS):
             res, slope_intercept = stats.probplot(
                 integral_intensity, dist=stats.expon)
             plt.grid()
-            fig.savefig('out/{}/{}.png'.format(saved_file, it))
+            fig.savefig('logs/out/{}/{}.png'.format(saved_file, it))
             plt.close()
 
             if np.abs(1 - slope_intercept[0]) < 1e-1 and deviation < 1e-1:
@@ -422,7 +426,7 @@ for it in range(ITERS):
         elif deviation < 1e-2:
             stop_indicator = True
 
-    if it == ITERS - 1 or stop_indicator:
+    if it == ITERS - 1 or stop_indicator or it % 1000 == 0:
         sequences_generator = []
         for _ in range(int(SEQ_NUM / BATCH_SIZE)):
             sequences_gen = sess.run(fake_data, feed_dict={
@@ -437,9 +441,10 @@ for it in range(ITERS):
             sequences_generator += sequences_gen
         # sequence2file(sequences_generator, 'wgan_{}_{}_{}_{}'.format(
         #     DATA, SEQ_NUM, ITERATION, LAMBDA_LP))
-        np.save(os.path.join('out', saved_file,
-                             'result_{}_{}_{}_{}_{}'.format(DATA, SEQ_NUM,
+        np.save(os.path.join('logs/out', saved_file,
+                             'result_{}_{}_{}_{}_{}.npy'.format(DATA, SEQ_NUM,
                                                             ITERATION,
                                                             LAMBDA_LP, it)),
                 sequences_generator)
-        break
+        if it == ITERS - 1 or stop_indicator:
+            break
