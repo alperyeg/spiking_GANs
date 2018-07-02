@@ -80,7 +80,7 @@ def generate_data(data_type, encode=False):
         # stp = d['patterns']
         # sts = generate_sts(data_type=6, T=6000 * pq.ms, N=1)[0]
         # sts_final = stp + sts
-        d['data']
+        d = d['data']
     return d
 
 
