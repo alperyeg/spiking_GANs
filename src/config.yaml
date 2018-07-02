@@ -1,3 +1,9 @@
+#############################
+### parameter config file ###
+#############################
+
+dataroot: 'logs/data/fbbc23c4-b20b-4a63-9686-2e304333f1e3' # to dataset
+dataname: 'data_NS10000_IS64_type-pattern_encoded-True_rate10.npy' # 'Name of dataset, use together with dataroot to navigate to the dataset
 data_type: 'step_rate'    # variability | pattern
 encoding: True
 generate: True
@@ -6,3 +12,37 @@ save_data_path: 'logs/data/'
 imageSize: 64
 rate: 10
 num_samples: 10000
+
+dataset:
+  - cifar10
+  - lsun
+  - imagenet
+  - folder
+  - lfw
+  - fake
+  - step_rate
+  - variability
+  - pattern
+epoch: 25         # Number of epochs to train for
+lambda_lp: 0.1    # Penalty for Lipschitz divergence
+critic_iters: 5   # How many critic iterations per generator iteration
+batch_size: 64
+max_steps: 300
+iters: 10000     # How many generator iterations to train for
+manualSeed: 123  # set graph-level seed
+set_seed: False
+T: 15.0          # End time of simulation
+seq_num: 10000   # Number of sequences
+mode: 'wgan-lp'  # Type of Network to use: wgan-lp | dcgan
+data: 'hawkes'   # hawkes | selfcorrecting | gaussian| rnn
+pre_train: True
+cost_all: True
+g_diff: True
+d_diff: True
+mark: False
+iteration: 0
+dim_size: 1
+cuda: 1          # Enables cuda
+ngpu: 1          # Number of GPUs to use
+gen: ''          # Path to Generator to continue training
+disc: ''         # Path to Discriminator to continue training
