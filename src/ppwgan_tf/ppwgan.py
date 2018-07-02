@@ -6,7 +6,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 from datetime import datetime
-# import time
+import time
 import pickle
 import os.path
 import tensorflow as tf
@@ -27,7 +27,7 @@ from Utils import \
 
 ##############################################################################
 # parameters
-with open('params.yaml', 'r') as stream:
+with open('ppwgan_tf/params.yaml', 'r') as stream:
     try:
         params = yaml.load(stream)
         print(params)
@@ -41,7 +41,7 @@ LAMBDA_LP = 0.1  # Penality for Lipschtiz divergence
 CRITIC_ITERS = 5  # How many critic iterations per generator iteration
 BATCH_SIZE = 16  # Batch size
 MAX_STEPS = 300
-ITERS = 20  # how many generator iterations to train for
+ITERS = 20000  # how many generator iterations to train for
 SEED = 1234  # set graph-level seed
 SET_SEED = False
 PRE_TRAIN = True
@@ -51,7 +51,7 @@ D_DIFF = True
 MARK = False
 ITERATION = 0
 T = 15.0  # end time of simulation
-SEQ_NUM = 100  # number of sequences
+SEQ_NUM = 20000  # number of sequences
 DIM_SIZE = 1
 
 # DATA = sys.argv[1]
@@ -76,8 +76,8 @@ if SET_SEED:
 
 FILE_NAME = 'pickled_data_{}'.format(DATA)
 if not os.path.isfile(FILE_NAME):
-    dat = np.load(DATA_PATH).item()
-    real_sequences = dat['spikes']
+    t = time.time()
+# sq
     # intensityPoisson = IntensityHomogenuosPoisson(lambda0)
     fake_sequences = [homogeneous_poisson_process(
         10 * pq.Hz, t_start=0 * pq.ms, t_stop=6000 * pq.ms)

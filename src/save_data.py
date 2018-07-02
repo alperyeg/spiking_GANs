@@ -33,7 +33,7 @@ Supported data types are so far (step_rate | variability | pattern)
 '''
 
 # Number of data samples
-num_samples = 10000
+num_samples = 10
 imageSize = 64
 save_dict = {}
 try:
@@ -73,11 +73,14 @@ def generate_data(data_type, encode=False):
                                                 binned=(not encode))
     elif data_type == 'pattern':
         np.random.seed(os.getpid())
-        d = DataDistribution.generate_stp_data(n_neurons=64, rate=10 * pq.Hz,
-                                               occurr=5, xi=20,
+        d = DataDistribution.generate_stp_data(n_neurons=1, rate=10 * pq.Hz,
+                                               occurr=5, xi=10,
                                                t_stop=6 * pq.s,
                                                delay=0 * pq.ms)
-        d = d['data']
+        # stp = d['patterns']
+        # sts = generate_sts(data_type=6, T=6000 * pq.ms, N=1)[0]
+        # sts_final = stp + sts
+        d['data']
     return d
 
 
@@ -139,8 +142,8 @@ if __name__ == '__main__':
         fname = opt.filename
     else:
         fname = 'data_NS{}_IS{}_type-{}_encoded-{}_rate{}.npy'.format(
-                           num_samples, imageSize, opt.data_type, opt.encoding,
-                           ARRAY_ID)
+            num_samples, imageSize, opt.data_type, opt.encoding,
+            ARRAY_ID)
     u = str(uuid.uuid4())
     path = os.path.join(opt.path, u)
     utils.save_samples(save_dict, path=path, filename=fname)
