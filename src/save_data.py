@@ -23,7 +23,7 @@ parser.add_argument('--generate', required=True, type=bool,
                     default=True)
 parser.add_argument('--filename', required=False, type=str,
                     help='Name of the file to be saved')
-parser.add_argument('--path', required=False, type=str, default='.',
+parser.add_argument('--path', required=False, type=str, default='logs/data',
                     help='Path of the file to be saved')
 
 opt = parser.parse_args()
@@ -33,7 +33,7 @@ Supported data types are so far (step_rate | variability | pattern)
 '''
 
 # Number of data samples
-num_samples = 10
+num_samples = 10000
 imageSize = 64
 save_dict = {}
 try:
