@@ -65,6 +65,8 @@ parser.add_argument('--outf', default='./logs/run_{}_rate{}'.format(
 parser.add_argument('--manualSeed', type=int, help='manual seed')
 parser.add_argument('--encoding', type=bool, help='load encoded data',
                     default=False)
+parser.add_argument('--minibatch_disc', type=bool,
+                    help='use minibatch discrimination', default=True)
 
 
 opt = parser.parse_args()
@@ -125,7 +127,7 @@ def load_data(dataset_name, encoding=False, array_id=10):
             fname = './logs/data/data_NS10000_IS64_type-{0}_rate{1}.npy'.format(
                 dataset_name, array_id)
             dat = np.load(fname).item()
-        print("Loaded dataset: {}".format(fname))            
+        print("Loaded dataset: {}".format(fname))
         binned_data = dat['binned_data']
         norm_data = dat['normed_data']
         num_samples = len(binned_data)
@@ -263,6 +265,7 @@ class _net_D(nn.Module):
     Implemented feature matching and minibatch discrimination
     """
     # TODO make minibatch discr. and feature matching optional/functions
+
     def __init__(self, ngpu):
         super(_net_D, self).__init__()
         self.ngpu = ngpu
@@ -302,33 +305,37 @@ class _net_D(nn.Module):
             out = nn.parallel.data_parallel(self.netD_2, self.netD_1,
                                             range(self.ngpu))
         else:
-            # minibatch discrimination
-            # create Tensor T (trainable)
-            t_tensor_init = torch.rand(
-                ndf * 8 * 4 * 4, self.n_B * self.n_C) * 0.1
-            t_tensor = nn.Parameter(t_tensor_init, requires_grad=True)
-            intermediate = self.netD_1(inpt)
-            intermed = intermediate.view(-1, ndf * 8 * 4 * 4)
-            if opt.cuda:
-                intermed = intermed.cuda()
-                intermediate = intermediate.cuda()
-                t_tensor = t_tensor.cuda()
-            # calculate the matrix M
-            ms = intermed.mm(t_tensor)
-            ms = ms.view(-1, self.n_B, self.n_C)
-            out_tensor = []
-            for ii in range(ms.size()[0]):
-                out_i = None
-                for jj in range(ms.size()[0]):
-                    o_i = torch.sum(torch.abs(ms[ii, :, :] - ms[jj, :, :]), 1)
-                    o_i = torch.exp(-o_i)
-                    if out_i is None:
-                        out_i = o_i
-                    else:
-                        out_i = out_i + o_i
-                out_tensor.append(out_i)
-            out_t = torch.cat(tuple(out_tensor)).view(ms.size()[0], self.n_B)
-            out = torch.cat((intermed, out_t), 1).view(ms.size(0), -1, 4, 4)
+            if opt.minibatch_disc:
+                # minibatch discrimination
+                # create Tensor T(trainable)
+                t_tensor_init = torch.rand(
+                    ndf * 8 * 4 * 4, self.n_B * self.n_C) * 0.1
+                t_tensor = nn.Parameter(t_tensor_init, requires_grad=True)
+                intermediate = self.netD_1(inpt)
+                intermed = intermediate.view(-1, ndf * 8 * 4 * 4)
+                if opt.cuda:
+                    intermed = intermed.cuda()
+                    intermediate = intermediate.cuda()
+                    t_tensor = t_tensor.cuda()
+                # calculate the matrix M
+                ms = intermed.mm(t_tensor)
+                ms = ms.view(-1, self.n_B, self.n_C)
+                out_tensor = []
+                for ii in range(ms.size()[0]):
+                    out_i = None
+                    for jj in range(ms.size()[0]):
+                        o_i = torch.sum(
+                            torch.abs(ms[ii, :, :] - ms[jj, :, :]), 1)
+                        o_i = torch.exp(-o_i)
+                        if out_i is None:
+                            out_i = o_i
+                        else:
+                            out_i = out_i + o_i
+                    out_tensor.append(out_i)
+                out_t = torch.cat(tuple(out_tensor)).view(
+                    ms.size()[0], self.n_B)
+                out = torch.cat((intermed, out_t), 1).view(
+                    ms.size(0), -1, 4, 4)
             out = self.netD_2(out)
 
         return out.view(-1, 1).squeeze(1), intermediate
