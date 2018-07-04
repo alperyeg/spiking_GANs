@@ -27,6 +27,15 @@ rule dcgan_train:
         "python dcgan_spikes_torch.py --generate {gen} --encoding {enc} --data_type {dtype}".format(
             gen=config['generate'], dtype=config['data_type'], enc=config['encoding'])
 
+rule ppwgan_tf_train:
+    input:
+        "config.yaml"
+    output:
+        expand("ppwgan_tf/out/result_{data}_{seq}_{i}.npy", data=config['data'], seq=config['seq_num'], it=config['iteration'], i=range(0, config['iters'], 10))
+    shell:
+        "python ppwgan_tf/ppwgan.py"
+
+        
 rule plot_figs:
     input:
         dynamic("logs/run_{date}/results.npy")
