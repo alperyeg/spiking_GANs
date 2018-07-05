@@ -65,7 +65,7 @@ parser.add_argument('--outf', default='./logs/run_{}_rate{}'.format(
 parser.add_argument('--manualSeed', type=int, help='manual seed')
 parser.add_argument('--encoding', type=bool, help='load encoded data',
                     default=False)
-parser.add_argument('--minibatch_disc', type=bool,
+parser.add_argument('--minibatchDisc', type=bool,
                     help='use minibatch discrimination', default=True)
 
 
@@ -288,8 +288,8 @@ class _net_D(nn.Module):
 
         )
         # this values are for the tensor T (improved GAN)
-        self.n_B = 128
-        self.n_C = 16
+        self.n_B = 128 if opt.minibatchDisc else 0
+        self.n_C = 16 if opt.minibatchDisc else 0
         # for the intermediate layer
         # TODO try also with linear and fully connected layer
         self.netD_2 = nn.Sequential(
@@ -305,7 +305,7 @@ class _net_D(nn.Module):
             out = nn.parallel.data_parallel(self.netD_2, self.netD_1,
                                             range(self.ngpu))
         else:
-            if opt.minibatch_disc:
+            if opt.minibatchDisc:
                 # minibatch discrimination
                 # create Tensor T(trainable)
                 t_tensor_init = torch.rand(
@@ -336,8 +336,10 @@ class _net_D(nn.Module):
                     ms.size()[0], self.n_B)
                 out = torch.cat((intermed, out_t), 1).view(
                     ms.size(0), -1, 4, 4)
-            out = self.netD_2(out)
-
+                out = self.netD_2(out)
+            else:
+                intermediate = self.netD_1(inpt)
+                out = self.netD_2(intermediate)
         return out.view(-1, 1).squeeze(1), intermediate
 
 
