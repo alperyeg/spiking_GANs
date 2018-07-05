@@ -443,8 +443,8 @@ for it in range(ITERS):
         #     DATA, SEQ_NUM, ITERATION, LAMBDA_LP))
         np.save(os.path.join('logs/out', saved_file,
                              'result_{}_{}_{}_{}_{}.npy'.format(DATA, SEQ_NUM,
-                                                            ITERATION,
-                                                            LAMBDA_LP, it)),
+                                                                ITERATION,
+                                                                LAMBDA_LP, it)),
                 sequences_generator)
         if it == ITERS - 1 or stop_indicator:
             break
