@@ -86,7 +86,7 @@ def encode_input(spiketrains, rows, columns, dt=1 * pq.ms, refrac=2 * pq.ms,
     :param columns: Size of the columns of matrix `M`
     :param dt: quantity object: Time resolution of the step to go
     :param fill: float: value for inserting instead of copying the previous
-        spike time
+        spike time, if `None` copies the previous value, Default is None
     :return: Encoded matrix `M`
     """
     M = np.zeros((rows, columns))
@@ -132,7 +132,7 @@ def encode_input(spiketrains, rows, columns, dt=1 * pq.ms, refrac=2 * pq.ms,
                             steps += dt
                         s += 1
             else:
-                M[i, j] = res
+                M[i, j] = fill if fill is not None else res
     return M
 
 
