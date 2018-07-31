@@ -15,9 +15,9 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--data_type', required=False, type=str,
                     help='kind of rate (step_rate | variability | pattern)',
                     default='step_rate')
-parser.add_argument('--encoding', required=False, type=str,
+parser.add_argument('--encoding', required=False,
                     help='if input should be encoded',
-                    default=False)
+                    default=False, action='store_true')
 parser.add_argument('--generate', required=True, type=bool,
                     help='if the data should be generated',
                     default=True)
@@ -27,6 +27,7 @@ parser.add_argument('--path', required=False, type=str, default='logs/data',
                     help='Path of the file to be saved')
 
 opt = parser.parse_args()
+print(opt)
 
 '''
 Supported data types are so far (step_rate | variability | pattern)
