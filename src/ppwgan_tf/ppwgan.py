@@ -38,7 +38,8 @@ with open('config.yaml', 'r') as stream:
 MODE = params['mode']  # wgan-lp
 DATA = params['data']  # hawkes, selfcorrecting, gaussian, rnn
 LAMBDA_LP = params['lambda_lp']  # Penality for Lipschtiz divergence
-CRITIC_ITERS = params['critic_iters'] # How many critic iterations per generator iteration
+# How many critic iterations per generator iteration
+CRITIC_ITERS = params['critic_iters']
 BATCH_SIZE = params['batch_size']  # Batch size
 MAX_STEPS = params['max_steps']
 ITERS = params['iters']  # how many generator iterations to train for
@@ -79,9 +80,10 @@ if not os.path.isfile(FILE_NAME):
     t = time.time()
     dat = np.load(DATA_PATH).item()
     print('loading data done in {}'.format(time.time() - t))
-    real_sequences = []
-    for s in dat['spikes']:
-        real_sequences.extend(s)
+    # real_sequences = []
+    # for s in dat['spikes']:
+    #     real_sequences.extend(s)
+    real_sequences = dat['normed_data'].squeeze().reshape(1000, 28*28)
     # intensityPoisson = IntensityHomogenuosPoisson(lambda0)
     fake_sequences = [homogeneous_poisson_process(
         10 * pq.Hz, t_start=0 * pq.ms, t_stop=6000 * pq.ms)
