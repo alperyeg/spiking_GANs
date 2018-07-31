@@ -264,35 +264,38 @@ class _net_D(nn.Module):
     https://arxiv.org/abs/1606.03498
     Implemented feature matching and minibatch discrimination
     """
-    # TODO make minibatch discr. and feature matching optional/functions
 
     def __init__(self, ngpu):
         super(_net_D, self).__init__()
         self.ngpu = ngpu
+        # feature matching
+        # this values are for the tensor T (improved GAN)
+        self.n_B = 128 if opt.minibatchDisc else 0
+        self.n_C = 16 if opt.minibatchDisc else 0
         self.netD_1 = nn.Sequential(
             # input is (nc) x 64 x 64
             nn.Conv2d(nc, ndf, 4, 2, 1, bias=False),
             nn.LeakyReLU(0.2, inplace=True),
+        )
+        self.netD_2 = nn.Sequential(
             # state size. (ndf) x 32 x 32
             nn.Conv2d(ndf, ndf * 2, 4, 2, 1, bias=False),
             nn.BatchNorm2d(ndf * 2),
             nn.LeakyReLU(0.2, inplace=True),
+        )
+        self.netD_3 = nn.Sequential(
             # state size. (ndf*2) x 16 x 16
             nn.Conv2d(ndf * 2, ndf * 4, 4, 2, 1, bias=False),
             nn.BatchNorm2d(ndf * 4),
             nn.LeakyReLU(0.2, inplace=True),
+        )
+        self.netD_4 = nn.Sequential(
             # state size. (ndf*4) x 8 x 8
             nn.Conv2d(ndf * 4, ndf * 8, 4, 2, 1, bias=False),
             nn.BatchNorm2d(ndf * 8),
             nn.LeakyReLU(0.2, inplace=True),
-
         )
-        # this values are for the tensor T (improved GAN)
-        self.n_B = 128 if opt.minibatchDisc else 0
-        self.n_C = 16 if opt.minibatchDisc else 0
-        # for the intermediate layer
-        # TODO try also with linear and fully connected layer
-        self.netD_2 = nn.Sequential(
+        self.netD_5 = nn.Sequential(
             # state size. (ndf*8) + n_c/2 x 4 x 4
             nn.Conv2d(int(ndf * 8 + self.n_C / 2), 1, 4, 1, 0, bias=False),
             nn.Sigmoid()
@@ -302,16 +305,19 @@ class _net_D(nn.Module):
         if isinstance(inpt.data, torch.cuda.FloatTensor) and self.ngpu > 1:
             intermediate = nn.parallel.data_parallel(self.netD_1, inpt,
                                                      range(self.ngpu))
-            out = nn.parallel.data_parallel(self.netD_2, self.netD_1,
+            out = nn.parallel.data_parallel(self.netD_5, self.netD_1,
                                             range(self.ngpu))
         else:
             if opt.minibatchDisc:
                 # minibatch discrimination
-                # create Tensor T(trainable)
+                # create Tensor T(trainable) according to the layer
                 t_tensor_init = torch.rand(
                     ndf * 8 * 4 * 4, self.n_B * self.n_C) * 0.1
                 t_tensor = nn.Parameter(t_tensor_init, requires_grad=True)
-                intermediate = self.netD_1(inpt)
+                intermediate1 = self.netD_1(inpt)
+                intermediate2 = self.netD_2(intermediate1)
+                intermediate3 = self.netD_3(intermediate2)
+                intermediate = self.netD_4(intermediate3)
                 intermed = intermediate.view(-1, ndf * 8 * 4 * 4)
                 if opt.cuda:
                     intermed = intermed.cuda()
@@ -336,10 +342,10 @@ class _net_D(nn.Module):
                     ms.size()[0], self.n_B)
                 out = torch.cat((intermed, out_t), 1).view(
                     ms.size(0), -1, 4, 4)
-                out = self.netD_2(out)
+                out = self.netD_5(out)
             else:
                 intermediate = self.netD_1(inpt)
-                out = self.netD_2(intermediate)
+                out = self.netD_5(intermediate)
         return out.view(-1, 1).squeeze(1), intermediate
 
 
@@ -394,7 +400,7 @@ save_dict['fake_data'] = []
 for epoch in range(opt.niter):
     # Create lists per epochs
     [save_dict[elem].append([epoch]) for elem in save_dict if
-     not elem in ['binned_data', 'num_samples']]
+     elem not in ['binned_data', 'num_samples']]
     for i, data in enumerate(dataloader, 0):
         ############################
         # (1) Update D network: maximize log(D(x)) + log(1 - D(G(z)))
