@@ -38,8 +38,7 @@ with open('config.yaml', 'r') as stream:
 MODE = params['mode']  # wgan-lp
 DATA = params['data']  # hawkes, selfcorrecting, gaussian, rnn
 LAMBDA_LP = params['lambda_lp']  # Penality for Lipschtiz divergence
-# How many critic iterations per generator iteration
-CRITIC_ITERS = params['critic_iters']
+CRITIC_ITERS = params['critic_iters'] # How many critic iterations per generator iteration
 BATCH_SIZE = params['batch_size']  # Batch size
 MAX_STEPS = params['max_steps']
 ITERS = params['iters']  # how many generator iterations to train for
@@ -83,8 +82,8 @@ if not os.path.isfile(FILE_NAME):
     # real_sequences = []
     # for s in dat['spikes']:
     #     real_sequences.extend(s)
-    real_sequences = dat['normed_data'].squeeze().reshape(1000, 28*28)
     # intensityPoisson = IntensityHomogenuosPoisson(lambda0)
+    real_sequences = dat['normed_data'].squeeze().reshape(10000, 64 * 64)
     fake_sequences = [homogeneous_poisson_process(
         10 * pq.Hz, t_start=0 * pq.ms, t_stop=6000 * pq.ms)
         for _ in range(SEQ_NUM)]
@@ -338,7 +337,7 @@ ts_real, intensity_real = get_intensity(real_sequences, T, n_t)
 
 # pre-train
 if PRE_TRAIN:
-    for it in range(80):  # 4000
+    for it in range(100):  # 4000
         real_batch = real_iterator.next_batch(BATCH_SIZE)
         fake_batch = fake_iterator.next_batch(BATCH_SIZE)
         pre_loss_curr, _ = sess.run([pre_train_loss, pre_train_op],
@@ -383,7 +382,7 @@ for it in range(ITERS):
 
     if it % 1000 == 0:
         sequences_generator = []
-        for _ in range(int(2000 / BATCH_SIZE)):
+        for _ in range(int(1000 / BATCH_SIZE)):
             sequences_gen = sess.run(fake_data, feed_dict={
                 Z: fake_batch[0], fake_seqlen: fake_batch[1]})
             shape_gen = sequences_gen.shape
