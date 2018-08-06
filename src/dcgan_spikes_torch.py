@@ -65,8 +65,10 @@ parser.add_argument('--outf', default='./logs/run_{}_rate{}'.format(
 parser.add_argument('--manualSeed', type=int, help='manual seed')
 parser.add_argument('--encoding', type=bool, help='load encoded data',
                     default=False)
-parser.add_argument('--minibatchDisc', type=bool,
-                    help='use minibatch discrimination', default=True)
+parser.add_argument('--minibatchDisc',
+                    help='use minibatch discrimination', default=False,
+                    action='store_true')
+
 
 
 opt = parser.parse_args()
@@ -305,7 +307,13 @@ class _net_D(nn.Module):
         if isinstance(inpt.data, torch.cuda.FloatTensor) and self.ngpu > 1:
             intermediate = nn.parallel.data_parallel(self.netD_1, inpt,
                                                      range(self.ngpu))
-            out = nn.parallel.data_parallel(self.netD_5, self.netD_1,
+            out = nn.parallel.data_parallel(self.netD_2, out,
+                                                     range(self.ngpu))
+            out = nn.parallel.data_parallel(self.netD_3, out,
+                                                     range(self.ngpu))
+            out = nn.parallel.data_parallel(self.netD_4, out,
+                                                     range(self.ngpu))
+            out = nn.parallel.data_parallel(self.netD_5, out,
                                             range(self.ngpu))
         else:
             if opt.minibatchDisc:
@@ -344,9 +352,12 @@ class _net_D(nn.Module):
                     ms.size(0), -1, 4, 4)
                 out = self.netD_5(out)
             else:
-                intermediate = self.netD_1(inpt)
-                out = self.netD_5(intermediate)
-        return out.view(-1, 1).squeeze(1), intermediate
+                intermediate1 = self.netD_1(inpt)
+                intermediate2 = self.netD_2(intermediate1)
+                intermediate3 = self.netD_3(intermediate2)
+                intermediate4 = self.netD_4(intermediate3)
+                out = self.netD_5(intermediate4)
+        return out.view(-1, 1).squeeze(1), intermediate1
 
 
 netD = _net_D(ngpu)
