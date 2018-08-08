@@ -46,7 +46,7 @@ if len(DATA_DIR) == 0:
 RESTORE_MODE = False
 START_ITER = 0  # starting iteration
 # output path where result (.e.g drawing images, cost, chart) will be stored
-OUTPUT_PATH = '../logs'
+OUTPUT_PATH = '../logs/'
 MODE = 'wgan-gp'  # dcgan, wgan
 DIM = 64  # Model dimensionality
 CRITIC_ITERS = 2  # How many iterations to train the critic for
@@ -55,7 +55,7 @@ N_GPUS = 1  # Number of GPUs
 BATCH_SIZE = 64  # Batch size. Must be a multiple of N_GPUS
 END_ITER = 100  # How many iterations to train for
 LAMBDA = 10  # Gradient penalty lambda hyperparameter
-OUTPUT_DIM = 64*64*3  # Number of pixels in each image
+OUTPUT_DIM = 32*32*3  # Number of pixels in each image
 
 
 def showMemoryUsage(device=1):
