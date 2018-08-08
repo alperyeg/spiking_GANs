@@ -123,7 +123,6 @@ if torch.cuda.is_available() and not opt.cuda:
         "WARNING: You have a CUDA device, "
         "so you should probably run with cuda")
 
-
 # Define a dictionary to save results
 save_dict = {}
 
@@ -395,7 +394,11 @@ def lipschitz_divergence(real_data, fake_data, d_real, d_fake):
     length_ = min(real_data.shape[1], fake_data.shape[1])
     # Apply the Lipschitz constraint
     # TODO check/correct dimensions
-    ld = torch.abs(d_real - d_fake / torch.sqrt(torch.sum((real_data[:, :length_, :] - fake_data[:, :length_, :])**2) + 0.00001))
+    ld = torch.abs(d_real - d_fake / torch.sqrt(torch.sum((real_data[:,
+                                                           :length_,
+                                                           :] - fake_data[:,
+                                                                :length_,
+                                                                :]) ** 2) + 0.00001))
     ld = torch.mean((ld - 1) ** 2)
     return ld
 
@@ -416,13 +419,12 @@ if opt.disc != '':
     discriminator.load_state_dict(torch.load(opt.disc))
 print(discriminator)
 
-
 # TODO: define labels, noise, optimizer (as empty tensors)
 fake_seqlen = torch.IntTensor(opt.batch_size)
 real_seqlen = torch.IntTensor(opt.batch_size)
 label = torch.FloatTensor(opt.batch_size)
 # label smoothing
-real_label = 0.9    # before 1.0
+real_label = 0.9  # before 1.0
 fake_label = 0
 one = torch.FloatTensor([1])
 mone = one * -1
@@ -553,8 +555,8 @@ if PRE_TRAIN:
         if i % 10 == 0:
             print('[{}/{}] pre_train_loss: pre_errD {}, pre_errG {}, '
                   'pre_D_x {}, pre_G_z1 {}, pre_G_z2 {}'.format(
-                      i, pre_stop, pre_errD.data[0], pre_errG.data[0], pre_D_x,
-                      pre_D_G_z1, pre_D_G_z2))
+                i, pre_stop, pre_errD.data[0], pre_errG.data[0], pre_D_x,
+                pre_D_G_z1, pre_D_G_z2))
 
         # stop pre training
         if i == pre_stop:

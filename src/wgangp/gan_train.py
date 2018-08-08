@@ -30,9 +30,9 @@ from timeit import default_timer as timer
 import torch.nn.init as init
 
 # lsun lmdb data set can be download via https://github.com/fyu/lsun
-DATA_DIR = '/datasets/lsun'
+DATA_DIR = '../logs/cifar10' # '/datasets/lsun'
 VAL_DIR = '/datasets/lsun'
-IMAGE_DATA_SET = 'lsun' # change this to something else, e.g. 'imagenets' or 'raw' if your data is just a folder of raw images. If you use lmdb, you'll need to write the loader by yourself
+IMAGE_DATA_SET = 'cifar10' # change this to something else, e.g. 'imagenets' or 'raw' if your data is just a folder of raw images. If you use lmdb, you'll need to write the loader by yourself
 TRAINING_CLASS = ['bedroom_train'] # ignore this if you are not training on lsun, or if you want to train on other classes of lsun, then change it accordingly
 VAL_CLASS = ['bedroom_val'] # ignore this if you are not training on lsun, or if you want to train on other classes of lsun, then change it accordingly
 
@@ -82,6 +82,17 @@ def load_data(path_to_folder, classes):
                 ])
     if IMAGE_DATA_SET == 'lsun':
         dataset =  datasets.LSUN(path_to_folder, classes=classes, transform=data_transform)
+    elif IMAGE_DATA_SET == 'cifar10':
+        print('in cifar10 dataset')
+        dataset = datasets.CIFAR10(root=path_to_folder, download=True,
+                               transform=transforms.Compose([
+                                   transforms.Scale(64),
+                                   transforms.ToTensor(),
+                                   transforms.Normalize((0.5, 0.5, 0.5),
+                                                        (0.5, 0.5, 0.5)),
+                               ]))
+        nc = 3
+        
     else:
         dataset = datasets.ImageFolder(root=path_to_folder,transform=data_transform)
     dataset_loader = torch.utils.data.DataLoader(dataset,batch_size=BATCH_SIZE, shuffle=True, num_workers=5, drop_last=True, pin_memory=True)
@@ -199,7 +210,7 @@ def train():
         
         optimizer_g.step()
         end = timer()
-        print('---train G elapsed time: {end - start}')
+        print('---train G elapsed time: {}'.format(end-start))
         #---------------------TRAIN D------------------------
         for p in aD.parameters():  # reset requires_grad
             p.requires_grad_(True)  # they are set to False below in training G
@@ -214,7 +225,7 @@ def train():
             with torch.no_grad():
                 noisev = noise  # totally freeze G, training D
             fake_data = aG(noisev).detach()
-            end = timer(); print('---gen G elapsed time: {end-start}')
+            end = timer(); print('---gen G elapsed time: {}'.format(end-start))
             start = timer()
             batch = next(dataiter, None)
             if batch is None:
@@ -222,7 +233,7 @@ def train():
                 batch = dataiter.next()
             batch = batch[0] #batch[1] contains labels
             real_data = batch.to(device) #TODO: modify load_data for each loading
-            end = timer(); print('---load real imgs elapsed time: {end-start}')
+            end = timer(); print('---load real imgs elapsed time: {}'.format(end-start))
             start = timer()
 
             # train with real data
@@ -265,7 +276,7 @@ def train():
                     tensors = torchvision.utils.make_grid(tensor, nrow=8,padding=1)
                     writer.add_image('D/conv1', tensors, iteration)
 
-            end = timer(); print('---train D elapsed time: {end-start}')
+            end = timer(); print('---train D elapsed time: {}'.format(end-start))
         #---------------VISUALIZATION---------------------
         writer.add_scalar('data/gen_cost', gen_cost, iteration)
 
