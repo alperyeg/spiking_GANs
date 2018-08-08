@@ -46,14 +46,16 @@ if len(DATA_DIR) == 0:
 RESTORE_MODE = False
 START_ITER = 0  # starting iteration
 # output path where result (.e.g drawing images, cost, chart) will be stored
-OUTPUT_PATH = '../logs/'
+OUTPUT_PATH = '../logs/wgan-out'
+if not os.path.exists(OUTPUT_PATH):
+    os.mkdir(OUTPUT_PATH)
 MODE = 'wgan-gp'  # dcgan, wgan
 DIM = 64  # Model dimensionality
-CRITIC_ITERS = 2  # How many iterations to train the critic for
+CRITIC_ITERS = 5  # How many iterations to train the critic for
 GENER_ITERS = 1
 N_GPUS = 1  # Number of GPUs
 BATCH_SIZE = 64  # Batch size. Must be a multiple of N_GPUS
-END_ITER = 100  # How many iterations to train for
+END_ITER = 1000  # How many iterations to train for
 LAMBDA = 10  # Gradient penalty lambda hyperparameter
 OUTPUT_DIM = 32*32*3  # Number of pixels in each image
 
@@ -198,7 +200,7 @@ aD = aD.to(device)
 one = one.to(device)
 mone = mone.to(device)
 
-writer = SummaryWriter()
+writer = SummaryWriter(log_dir=os.path.join(OUTPUT_PATH, 'tensorboard'))
 # Reference: https://github.com/caogang/wgan-gp/blob/master/gan_cifar10.py
 
 
@@ -268,15 +270,12 @@ def train():
             # train with interpolates data
             gradient_penalty = calc_gradient_penalty(aD, real_data, fake_data)
             # showMemoryUsage(0)
-            print('penalty done')
 
             # final disc cost
             disc_cost = disc_fake - disc_real + gradient_penalty
             disc_cost.backward()
-            print('disc cost backward done')
             w_dist = disc_fake - disc_real
             optimizer_d.step()
-            print('optim step done')
             #------------------VISUALIZATION----------
             if i == CRITIC_ITERS-1 and not OLDGAN:
                 writer.add_scalar('data/disc_cost', disc_cost, iteration)
@@ -313,28 +312,21 @@ def train():
                       gen_cost.cpu().data.numpy())
         lib.plot.plot(OUTPUT_PATH + 'wasserstein_distance',
                       w_dist.cpu().data.numpy())
-        if iteration % 20 == 0:
-            print('in iteration')
+        if iteration % 200 == 199:
             val_loader = val_data_loader()
             dev_disc_costs = []
             for idx, images in enumerate(val_loader):
                 imgs = torch.Tensor(images[0])
                 imgs = imgs.to(device)
-                print(imgs.size())
                 with torch.no_grad():
                     imgs_v = imgs
 
                 D = aD(imgs_v)
                 _dev_disc_cost = -D.mean().cpu().data.numpy()
                 dev_disc_costs.append(_dev_disc_cost)
-                if idx == 5:
-                    break
-            print('now lib plot')
             lib.plot.plot(OUTPUT_PATH + 'dev_disc_cost.png',
                           np.mean(dev_disc_costs))
-            print('next is flush')
             lib.plot.flush()
-            print('generate images')
             gen_images = generate_image(aG, fixed_noise)
             torchvision.utils.save_image(
                 gen_images, OUTPUT_PATH + 'samples_{}.png'.format(iteration), nrow=8, padding=2)
