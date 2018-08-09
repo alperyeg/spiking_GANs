@@ -1,39 +1,70 @@
 import os
 import sys
-sys.path.append(os.getcwd())
 
 import time
-import functools
-import argparse
+# import functools
+# import argparse
 
 import numpy as np
-#import sklearn.datasets
+# import sklearn.datasets
 
 import libs as lib
-import libs.plot
+# import libs.plot
 from tensorboardX import SummaryWriter
 
-import pdb
+# import pdb
 import gpustat
 
 # import models.dcgan as dcgan
-from models.wgan import *
+from models.wgan import GoodDiscriminator, GoodGenerator, MyConvo2d
 
 import torch
 import torchvision
 from torch import nn
 from torch import autograd
-from torch import optim
+# from torch import optim
 from torchvision import transforms, datasets
-from torch.autograd import grad
+from torch.utils.data import TensorDataset
+# from torch.autograd import grad
 from timeit import default_timer as timer
 
 import torch.nn.init as init
+import yaml
+
+sys.path.append(os.getcwd())
+
+
+with open('../config.yaml', 'r') as stream:
+    try:
+        params = yaml.load(stream)
+        print(params)
+    except yaml.YAMLError as err:
+        print(err)
+
+DATA_DIR = os.path.join(params['dataroot'], params['dataname'])
+VAL_DIR = params['data']
+IMAGE_DATA_SET = params['data_type']
+MODE = params['mode']
+# LAMBDA = params['lambda_lp']
+BATCH_SIZE = params['batch_size']  # Batch size
+MAX_STEPS = params['max_steps']
+ITERS = params['iters']  # how many generator iterations to train for
+CRITIC_ITERS = params['critic_iters']
+START_ITER = 0  # starting iteration
+GENER_ITERS = 1
+SEED = params['manualSeed']  # set graph-level seed
+SET_SEED = params['set_seed']
+PRE_TRAIN = params['pre_train']
+ITERATION = params['iteration']
+DIM = 64  # params['dim_size']
+END_ITER = params['iters']
+ENCODING = params['encoding']
+N_GPUS = params['ngpu']
 
 # lsun lmdb data set can be download via https://github.com/fyu/lsun
-DATA_DIR = '../logs/cifar10'  # '/datasets/lsun'
-VAL_DIR = '../logs/cifar10'
-IMAGE_DATA_SET = 'cifar10'  # change this to something else, e.g. 'imagenets' or 'raw' if your data is just a folder of raw images. If you use lmdb, you'll need to write the loader by yourself
+# DATA_DIR = '../logs/cifar10'  # '/datasets/lsun'
+# VAL_DIR = '../logs/cifar10'
+# IMAGE_DATA_SET = 'cifar10'  # change this to something else, e.g. 'imagenets' or 'raw' if your data is just a folder of raw images. If you use lmdb, you'll need to write the loader by yourself
 # ignore this if you are not training on lsun, or if you want to train on other classes of lsun, then change it accordingly
 TRAINING_CLASS = ['bedroom_train']
 # ignore this if you are not training on lsun, or if you want to train on other classes of lsun, then change it accordingly
@@ -44,20 +75,19 @@ if len(DATA_DIR) == 0:
 
 # if True, it will load saved model from OUT_PATH and continue to train
 RESTORE_MODE = False
-START_ITER = 0  # starting iteration
 # output path where result (.e.g drawing images, cost, chart) will be stored
-OUTPUT_PATH = '../logs/wgan-out'
+OUTPUT_PATH = '../logs/wgan-out/'
 if not os.path.exists(OUTPUT_PATH):
     os.mkdir(OUTPUT_PATH)
-MODE = 'wgan-gp'  # dcgan, wgan
-DIM = 64  # Model dimensionality
-CRITIC_ITERS = 5  # How many iterations to train the critic for
-GENER_ITERS = 1
-N_GPUS = 1  # Number of GPUs
-BATCH_SIZE = 64  # Batch size. Must be a multiple of N_GPUS
-END_ITER = 1000  # How many iterations to train for
+# MODE = 'wgan-gp'  # dcgan, wgan
+# DIM = 64  # Model dimensionality
+# CRITIC_ITERS = 5  # How many iterations to train the critic for
+# GENER_ITERS = 1
+# N_GPUS = 1  # Number of GPUs
+# BATCH_SIZE = 64  # Batch size. Must be a multiple of N_GPUS
+# END_ITER = 1000  # How many iterations to train for
 LAMBDA = 10  # Gradient penalty lambda hyperparameter
-OUTPUT_DIM = 32*32*3  # Number of pixels in each image
+OUTPUT_DIM = 1 * 32 * 32  # Number of pixels in each image (cxhxw)
 
 
 def showMemoryUsage(device=1):
@@ -83,6 +113,35 @@ def weights_init(m):
             init.constant_(m.bias, 0.0)
 
 
+def load_spike_data(dataset_name, encoding=False, rate=10):
+    if encoding:
+        try:
+            fname = dataset_name
+            dat = np.load(fname).item()
+        except (KeyError, FileNotFoundError):
+            fname = './logs/data/data_NS10000_IS64_type-{}_encoded-{}_rate{}.npy'.format(
+                dataset_name, encoding, rate)
+        print("Loaded dataset: {}".format(fname))
+        norm_data = dat['normed_data']
+        num_samples = len(norm_data)
+        # encoded_data = dat['encoded_data']
+        # Convert list to float32
+        tensor_all = torch.from_numpy(
+            np.array(norm_data, dtype=np.float32))
+        # raw_tensor = torch.from_numpy(
+        #     np.array(encoded_data, dtype=np.float32).reshape(num_samples,
+        #                                                      DIM, DIM, 1))
+        # save_dict['encoded_data'] = encoded_data
+        # Free space
+    del dat
+    # preprocess(tensor_all)
+    # Define targets as ones
+    targets = torch.ones(num_samples)
+    # Create dataset
+    ds = TensorDataset(tensor_all, targets)
+    return ds  # , raw_tensor
+
+
 def load_data(path_to_folder, classes, train_=True):
     data_transform = transforms.Compose([
         transforms.Resize(64),
@@ -94,11 +153,19 @@ def load_data(path_to_folder, classes, train_=True):
         dataset = datasets.LSUN(
             path_to_folder, classes=classes, transform=data_transform)
     elif IMAGE_DATA_SET == 'cifar10':
-        print('in cifar10 dataset')
         dataset = datasets.CIFAR10(root=path_to_folder, download=False,
                                    train=train_,
                                    transform=data_transform)
-        print('loaded cifar10')
+    elif IMAGE_DATA_SET == 'spikes':
+        print('loading data')
+        t = time.time()
+        dataset, tensor_raw = load_spike_data(dataset_name=DATA_DIR,
+                                              encoding=ENCODING,
+                                              rate=10)
+        print('done loading data, in sec: {}'.format(time.time() - t))
+        # nc = 1
+
+        assert dataset
     else:
         dataset = datasets.ImageFolder(
             root=path_to_folder, transform=data_transform)
@@ -211,7 +278,7 @@ def train():
         start_time = time.time()
         print("Iter: " + str(iteration))
         start = timer()
-        #---------------------TRAIN G------------------------
+        # ---------------------TRAIN G------------------------
         for p in aD.parameters():
             p.requires_grad_(False)  # freeze D
 
@@ -230,7 +297,7 @@ def train():
         optimizer_g.step()
         end = timer()
         print('---train G elapsed time: {}'.format(end-start))
-        #---------------------TRAIN D------------------------
+        # ---------------------TRAIN D------------------------
         for p in aD.parameters():  # reset requires_grad
             p.requires_grad_(True)  # they are set to False below in training G
         for i in range(CRITIC_ITERS):
@@ -276,17 +343,17 @@ def train():
             disc_cost.backward()
             w_dist = disc_fake - disc_real
             optimizer_d.step()
-            #------------------VISUALIZATION----------
+            # ------------------VISUALIZATION----------
             if i == CRITIC_ITERS-1 and not OLDGAN:
                 writer.add_scalar('data/disc_cost', disc_cost, iteration)
-                #writer.add_scalar('data/disc_fake', disc_fake, iteration)
-                #writer.add_scalar('data/disc_real', disc_real, iteration)
+                # writer.add_scalar('data/disc_fake', disc_fake, iteration)
+                # writer.add_scalar('data/disc_real', disc_real, iteration)
                 writer.add_scalar('data/gradient_pen',
                                   gradient_penalty, iteration)
-                #writer.add_scalar('data/d_conv_weight_mean', [i for i in aD.children()][0].conv.weight.data.clone().mean(), iteration)
-                #writer.add_scalar('data/d_linear_weight_mean', [i for i in aD.children()][-1].weight.data.clone().mean(), iteration)
-                #writer.add_scalar('data/fake_data_mean', fake_data.mean())
-                #writer.add_scalar('data/real_data_mean', real_data.mean())
+                # writer.add_scalar('data/d_conv_weight_mean', [i for i in aD.children()][0].conv.weight.data.clone().mean(), iteration)
+                # writer.add_scalar('data/d_linear_weight_mean', [i for i in aD.children()][-1].weight.data.clone().mean(), iteration)
+                # writer.add_scalar('data/fake_data_mean', fake_data.mean())
+                # writer.add_scalar('data/real_data_mean', real_data.mean())
                 # if iteration %200==99:
                 #    paramsD = aD.named_parameters()
                 #    for name, pD in paramsD:
@@ -302,7 +369,7 @@ def train():
 
             end = timer()
             print('---train D elapsed time: {}'.format(end-start))
-        #---------------VISUALIZATION---------------------
+        # ---------------VISUALIZATION---------------------
         writer.add_scalar('data/gen_cost', gen_cost, iteration)
 
         lib.plot.plot(OUTPUT_PATH + 'time', time.time() - start_time)
@@ -333,7 +400,7 @@ def train():
             grid_images = torchvision.utils.make_grid(
                 gen_images, nrow=8, padding=2)
             writer.add_image('images', grid_images, iteration)
-        #----------------------Save model----------------------
+        # ----------------------Save model----------------------
             torch.save(aG, OUTPUT_PATH + "generator.pt")
             torch.save(aD, OUTPUT_PATH + "discriminator.pt")
         lib.plot.tick()
