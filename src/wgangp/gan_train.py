@@ -30,7 +30,7 @@ from timeit import default_timer as timer
 
 import torch.nn.init as init
 import yaml
-
+from libs.plot import plot
 sys.path.append(os.getcwd())
 
 
@@ -42,7 +42,7 @@ with open('../config.yaml', 'r') as stream:
         print(err)
 
 DATA_DIR = os.path.join(params['dataroot'], params['dataname'])
-VAL_DIR = params['data']
+VAL_DIR = params['val_dir']
 IMAGE_DATA_SET = params['data_type']
 MODE = params['mode']
 # LAMBDA = params['lambda_lp']
@@ -56,7 +56,7 @@ SEED = params['manualSeed']  # set graph-level seed
 SET_SEED = params['set_seed']
 PRE_TRAIN = params['pre_train']
 ITERATION = params['iteration']
-DIM = 64  # params['dim_size']
+DIM = 32  # params['dim_size']
 END_ITER = params['iters']
 ENCODING = params['encoding']
 N_GPUS = params['ngpu']
@@ -159,9 +159,8 @@ def load_data(path_to_folder, classes, train_=True):
     elif IMAGE_DATA_SET == 'spikes':
         print('loading data')
         t = time.time()
-        dataset, tensor_raw = load_spike_data(dataset_name=DATA_DIR,
-                                              encoding=ENCODING,
-                                              rate=10)
+        dataset = load_spike_data(dataset_name=path_to_folder,
+                                  encoding=ENCODING, rate=10)
         print('done loading data, in sec: {}'.format(time.time() - t))
         # nc = 1
 
@@ -186,10 +185,11 @@ def calc_gradient_penalty(netD, real_data, fake_data):
     alpha = torch.rand(BATCH_SIZE, 1)
     alpha = alpha.expand(BATCH_SIZE, int(
         real_data.nelement()/BATCH_SIZE)).contiguous()
-    alpha = alpha.view(BATCH_SIZE, 3, DIM, DIM)
+    alpha = alpha.view(BATCH_SIZE, 1, DIM, DIM)
     alpha = alpha.to(device)
 
-    fake_data = fake_data.view(BATCH_SIZE, 3, DIM, DIM)
+    fake_data = fake_data.view(BATCH_SIZE, 1, DIM, DIM)
+    real_data = real_data.reshape(BATCH_SIZE, 1, DIM, DIM)
     interpolates = alpha * real_data.detach() + ((1 - alpha) * fake_data.detach())
 
     interpolates = interpolates.to(device)
@@ -214,7 +214,7 @@ def generate_image(netG, noise=None):
     with torch.no_grad():
         noisev = noise
     samples = netG(noisev)
-    samples = samples.view(BATCH_SIZE, 3, 64, 64)
+    samples = samples.view(BATCH_SIZE, 1, 32, 32)
     samples = samples * 0.5 + 0.5
     return samples
 
@@ -242,8 +242,8 @@ if RESTORE_MODE:
     aD = torch.load(OUTPUT_PATH + "discriminator.pt")
 else:
     if MODE == 'wgan-gp':
-        aG = GoodGenerator(64, 64*64*3)
-        aD = GoodDiscriminator(64)
+        aG = GoodGenerator(32, 32*32*1)
+        aD = GoodDiscriminator(32)
         OLDGAN = False
     elif MODE == 'dcgan':
         aG = FCGenerator()
@@ -344,7 +344,7 @@ def train():
             w_dist = disc_fake - disc_real
             optimizer_d.step()
             # ------------------VISUALIZATION----------
-            if i == CRITIC_ITERS-1 and not OLDGAN:
+            if i == CRITIC_ITERS - 1 and not OLDGAN:
                 writer.add_scalar('data/disc_cost', disc_cost, iteration)
                 # writer.add_scalar('data/disc_fake', disc_fake, iteration)
                 # writer.add_scalar('data/disc_real', disc_real, iteration)
@@ -368,16 +368,16 @@ def train():
                     writer.add_image('D/conv1', tensors, iteration)
 
             end = timer()
-            print('---train D elapsed time: {}'.format(end-start))
+            print('---train D elapsed time: {}'.format(end - start))
         # ---------------VISUALIZATION---------------------
         writer.add_scalar('data/gen_cost', gen_cost, iteration)
 
-        lib.plot.plot(OUTPUT_PATH + 'time', time.time() - start_time)
-        lib.plot.plot(OUTPUT_PATH + 'train_disc_cost',
+        plot(OUTPUT_PATH + 'time', time.time() - start_time)
+        plot(OUTPUT_PATH + 'train_disc_cost',
                       disc_cost.cpu().data.numpy())
-        lib.plot.plot(OUTPUT_PATH + 'train_gen_cost',
+        plot(OUTPUT_PATH + 'train_gen_cost',
                       gen_cost.cpu().data.numpy())
-        lib.plot.plot(OUTPUT_PATH + 'wasserstein_distance',
+        plot(OUTPUT_PATH + 'wasserstein_distance',
                       w_dist.cpu().data.numpy())
         if iteration % 200 == 199:
             val_loader = val_data_loader()
@@ -391,7 +391,7 @@ def train():
                 D = aD(imgs_v)
                 _dev_disc_cost = -D.mean().cpu().data.numpy()
                 dev_disc_costs.append(_dev_disc_cost)
-            lib.plot.plot(OUTPUT_PATH + 'dev_disc_cost.png',
+            plot(OUTPUT_PATH + 'dev_disc_cost.png',
                           np.mean(dev_disc_costs))
             lib.plot.flush()
             gen_images = generate_image(aG, fixed_noise)

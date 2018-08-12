@@ -2,8 +2,8 @@ from torch import nn
 # from torch.autograd import grad
 import torch
 
-DIM = 64
-OUTPUT_DIM = 64*64*1
+DIM = 32
+OUTPUT_DIM = 32 * 32 * 1
 
 
 class MyConvo2d(nn.Module):
@@ -194,14 +194,14 @@ class GoodGenerator(nn.Module):
 
         self.dim = dim
 
-        self.ln1 = nn.Linear(128, 4*4*8*self.dim)
+        self.ln1 = nn.Linear(128, 1*4*8*self.dim)
         self.rb1 = ResidualBlock(8*self.dim, 8*self.dim, 3, resample='up')
         self.rb2 = ResidualBlock(8*self.dim, 4*self.dim, 3, resample='up')
         self.rb3 = ResidualBlock(4*self.dim, 2*self.dim, 3, resample='up')
         self.rb4 = ResidualBlock(2*self.dim, 1*self.dim, 3, resample='up')
         self.bn = nn.BatchNorm2d(self.dim)
 
-        self.conv1 = MyConvo2d(1*self.dim, 3, 3)
+        self.conv1 = MyConvo2d(1*self.dim, 1, 3)
         self.relu = nn.ReLU()
         self.tanh = nn.Tanh()
 
@@ -227,7 +227,7 @@ class GoodDiscriminator(nn.Module):
 
         self.dim = dim
 
-        self.conv1 = MyConvo2d(3, self.dim, 3, he_init=False)
+        self.conv1 = MyConvo2d(1, self.dim, 1, he_init=False)
         self.rb1 = ResidualBlock(self.dim, 2*self.dim,
                                  3, resample='down', hw=DIM)
         self.rb2 = ResidualBlock(
@@ -236,17 +236,17 @@ class GoodDiscriminator(nn.Module):
             4*self.dim, 8*self.dim, 3, resample='down', hw=int(DIM/4))
         self.rb4 = ResidualBlock(
             8*self.dim, 8*self.dim, 3, resample='down', hw=int(DIM/8))
-        self.ln1 = nn.Linear(4*4*8*self.dim, 1)
+        self.ln1 = nn.Linear(1*4*8*self.dim, 1)
 
     def forward(self, input):
         output = input.contiguous()
-        output = output.view(-1, 3, DIM, DIM)
+        output = output.view(-1, 1, DIM, DIM)
         output = self.conv1(output)
         output = self.rb1(output)
         output = self.rb2(output)
         output = self.rb3(output)
         output = self.rb4(output)
-        output = output.view(-1, 4*4*8*self.dim)
+        output = output.view(-1, 1*4*8*self.dim)
         output = self.ln1(output)
         output = output.view(-1)
         return output
