@@ -75,7 +75,7 @@ def _check_nonunique_spikes(spiketrain, num_spikes):
 
 
 def encode_input(spiketrains, rows, columns, dt=1 * pq.ms, refrac=2 * pq.ms,
-                 fill=None):
+                 start_val=0, fill=None):
     # TODO more documentation
     # TODO optimize?
     """
@@ -85,6 +85,10 @@ def encode_input(spiketrains, rows, columns, dt=1 * pq.ms, refrac=2 * pq.ms,
     :param rows: Size of the rows of matrix `M`
     :param columns: Size of the columns of matrix `M`
     :param dt: quantity object: Time resolution of the step to go
+    :param start_val: int: Starting value for the first element to be
+        encoded.
+       0: `t_start` value of the spiketrain,
+       1: first spike of the spiketrain
     :param fill: float: value for inserting instead of copying the previous
         spike time, if `None` copies the previous value, Default is None
     :return: Encoded matrix `M`
@@ -112,7 +116,10 @@ def encode_input(spiketrains, rows, columns, dt=1 * pq.ms, refrac=2 * pq.ms,
                         res = spk[s]
                         s += 1
                     else:
-                        res = t_start
+                        if start_val == 0:
+                            res = t_start
+                        elif start_val == 1:
+                            res = spk[s]
                     M[i, j] = res
                     # s += 1
                     steps += dt
