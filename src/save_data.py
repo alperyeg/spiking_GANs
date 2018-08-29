@@ -34,8 +34,8 @@ Supported data types are so far (step_rate | variability | pattern)
 '''
 
 # Number of data samples
-num_samples = 10000
-imageSize = 64
+num_samples = 10
+imageSize = 32
 save_dict = {}
 try:
     JOB_ID = int(os.environ['SLURM_JOB_ID'])
@@ -56,7 +56,7 @@ raw_data = []
 encoded_data = []
 
 
-def generate_data(data_type, encode=False):
+def generate_data(data_type, index, encode=False):
     d = None
     if data_type == 'step_rate':
         d = DataDistribution.poisson_nonstat_sample(
@@ -73,15 +73,15 @@ def generate_data(data_type, encode=False):
                                                 num_sts=64,
                                                 binned=(not encode))
     elif data_type == 'pattern':
-        np.random.seed(os.getpid())
+        np.random.seed(index)
         d = DataDistribution.generate_stp_data(n_neurons=1, rate=10 * pq.Hz,
-                                               occurr=5, xi=10,
+                                               occurr=7, xi=imageSize,
                                                t_stop=6 * pq.s,
                                                delay=0 * pq.ms)
-        # stp = d['patterns']
+        d = d['patterns']
         # sts = generate_sts(data_type=6, T=6000 * pq.ms, N=1)[0]
         # sts_final = stp + sts
-        d = d['data']
+        # d = d['data']
     return d
 
 
@@ -89,7 +89,7 @@ if __name__ == '__main__':
     with mp.Pool(mp.cpu_count()) as pool:
         t = time.time()
         if opt.generate:
-            data_all = [pool.apply_async(generate_data, args=(opt.data_type,
+            data_all = [pool.apply_async(generate_data, args=(opt.data_type, i, 
                                                               opt.encoding))
                         for i in range(num_samples)]
             # data = generate_data(data_type=opt.data_type,
@@ -98,8 +98,8 @@ if __name__ == '__main__':
                 for data in data_all:
                     raw_data.append(data.get())
                     encoded_data.extend(
-                        encoder(data.get(), imageSize, 200 * pq.ms, 20,
-                                fill=0.0))
+                        encoder(data.get(), imageSize, 200 * pq.ms,
+                                min_spikes=0))
             else:
                 for i, data in enumerate(data_all):
                     dat = data[0].to_array().ravel()
@@ -147,4 +147,6 @@ if __name__ == '__main__':
             ARRAY_ID)
     u = str(uuid.uuid4())
     path = os.path.join(opt.path, u)
+    if not os.path.exists(path):
+        os.makedirs(path)
     utils.save_samples(save_dict, path=path, filename=fname)
