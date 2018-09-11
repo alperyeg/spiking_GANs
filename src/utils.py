@@ -68,7 +68,8 @@ def _check_nonunique_spikes(spiketrain, num_spikes):
     c = Counter(spiketrain.ravel()).values()
     unique = True
     for i in c:
-        if i > num_spikes:
+        print(i)
+        if i >= num_spikes:
             unique = False
             break
     return unique
@@ -143,7 +144,7 @@ def encode_input(spiketrains, rows, columns, dt=1 * pq.ms, refrac=2 * pq.ms,
     return M
 
 
-def encoder(spiketrains, cols, dt, min_spikes=32, fill=None, start_val=1):
+def encoder(spiketrains, cols, dt, min_spikes=32, fill=None, start_val=0):
     # TODO type of sliding window, atm not sliding, rather jumping
     # TODO add possibility to calculate dt: cols/max_spike
     """
@@ -171,12 +172,13 @@ def encoder(spiketrains, cols, dt, min_spikes=32, fill=None, start_val=1):
     windows = int(
         np.ceil(
             longest_spiketrain / (cols * dt.rescale(spiketrains[0].units))))
-    en = encode_input(spiketrains, rows, windows * cols, dt, fill=fill)
+    en = encode_input(spiketrains, rows, windows * cols, dt, fill=fill,
+                      start_val=start_val)
     # store all encoded inputs
     ms = []
     # add only spike trains with at least `min_spikes` unique spikes
     [ms.append(en[:, w * cols:cols * (w + 1)]) for w in range(windows) if
-     len(np.unique(en[:, w * cols:cols * (w + 1)])) > rows * min_spikes]
+     len(np.unique(en[:, w * cols:cols * (w + 1)])) >= min_spikes]
     return ms
 
 

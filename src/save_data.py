@@ -34,7 +34,7 @@ Supported data types are so far (step_rate | variability | pattern)
 '''
 
 # Number of data samples
-num_samples = 10
+num_samples = 10000
 imageSize = 32
 save_dict = {}
 try:
@@ -89,7 +89,7 @@ if __name__ == '__main__':
     with mp.Pool(mp.cpu_count()) as pool:
         t = time.time()
         if opt.generate:
-            data_all = [pool.apply_async(generate_data, args=(opt.data_type, i, 
+            data_all = [pool.apply_async(generate_data, args=(opt.data_type, i,
                                                               opt.encoding))
                         for i in range(num_samples)]
             # data = generate_data(data_type=opt.data_type,
@@ -99,7 +99,7 @@ if __name__ == '__main__':
                     raw_data.append(data.get())
                     encoded_data.extend(
                         encoder(data.get(), imageSize, 200 * pq.ms,
-                                min_spikes=0))
+                                min_spikes=7, start_val=1))
             else:
                 for i, data in enumerate(data_all):
                     dat = data[0].to_array().ravel()
@@ -119,17 +119,22 @@ if __name__ == '__main__':
     if opt.encoding:
         norm_data = np.empty((len(encoded_data), 1, imageSize, imageSize),
                              dtype=np.float32)
-        norm_value = []
+        norm_value = 0
+        for ed in encoded_data:
+            # calc max value in the data set
+            max_val = np.max(ed)
+            if max_val > norm_value:
+                norm_value = max_val
+        # normalize
         for i, ed in enumerate(encoded_data):
             dat = np.array(ed).reshape((1, imageSize, imageSize))
-            norm_data[i] = np.divide(dat, np.max(dat))
-            norm_value.append(np.max(dat))
+            norm_data[i] = np.divide(dat, norm_value)
         save_dict['normed_data'] = norm_data
         save_dict['num_samples'] = num_samples
         save_dict['imageSize'] = imageSize
         save_dict['spikes'] = raw_data[:100]
         save_dict['encoded_data'] = encoded_data
-        save_dict['normed_values'] = norm_value
+        save_dict['normed_value'] = norm_value
 
     else:
         save_dict['binned_data'] = binned_data
