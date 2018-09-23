@@ -741,7 +741,3 @@ class GeneratorPlotter(object):
         if save:
             plt.savefig(figname)
         plt.show()
-
-
-g = GeneratorPlotter('logs/wgan-out/generator_state.pt')
-g.plot_dot_display_joint()
