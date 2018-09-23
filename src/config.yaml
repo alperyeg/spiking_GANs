@@ -2,10 +2,10 @@
 ### parameter config file ###
 #############################
 
-dataroot: '../logs/data/886dc1b1-4d59-4e1d-a7cc-c04d4a003f22' # to dataset
-dataname: 'train-data_NS10000_IS32_type-pattern_encoded-True_rate10.npy' # 'Name of dataset, use together with dataroot to navigate to the dataset
-val_dir : '../logs/data/886dc1b1-4d59-4e1d-a7cc-c04d4a003f22/train-data_NS10000_IS32_type-pattern_encoded-True_rate10.npy'
-data_type: 'pattern' # step_rate | variability | pattern
+dataroot: '../logs/data/2e4b108e-dd95-4abf-8e68-39130665f560/' # to dataset
+dataname: 'train-data_NS10000_IS32_type-pattern_encoded-True_rate10.npy' # Name of dataset, use together with dataroot to navigate to the dataset
+val_dir : '../logs/data/2e4b108e-dd95-4abf-8e68-39130665f560/test-data_NS10000_IS32_type-pattern_encoded-True_rate10.npy'
+data_type: 'spikes' # step_rate | variability | pattern
 encoding: True
 generate: True
 filename: ''

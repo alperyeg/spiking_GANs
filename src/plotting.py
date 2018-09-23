@@ -3,9 +3,11 @@ import seaborn as sns
 import numpy as np
 import pandas as pd
 import quantities as pq
+import torch
 
 from matplotlib import animation
 from utils import convert_to_spiketrains as cts
+from wgangp.models.wgan import GoodGenerator
 
 sns.set(color_codes=True, context='paper')
 cmap = sns.husl_palette(10, l=.4)
@@ -687,3 +689,59 @@ def plot_generated_dot_display(fname='', sample_num=(22, 1, 1, 40, 0),
     if save:
         plt.savefig(figname)
     plt.show()
+
+
+class GeneratorPlotter(object):
+    """
+    Reads in a pre-saved generator with file ending '.pt'. Generates data from
+    random noise. Provides plotting functionalities.
+    """
+    def __init__(self, generator_path, map_location="cpu"):
+        """
+
+        :param generator_path: string, path to pre-saved generator file
+        """
+        self.aG = GoodGenerator()
+        self.aG.load_state_dict(torch.load(generator_path,
+                                           map_location=map_location))
+        # alternatively give location
+        # self.aG = torch.load(generator_path, map_location=map_location)
+
+    def plot_dot_display_joint(self, shapes=(32, 128),
+                               reshapes=(32, 1, 32, 32),
+                               sample_num=(-1, 0),
+                               rho=6.,
+                               save=False, figname=""):
+        sn = sample_num
+        fakes = self.aG(torch.randn(shapes))
+        fakes = fakes.reshape(reshapes)
+        fake_data = fakes[sn[0], sn[1]].detach().numpy() * rho
+        x = []
+        for j, i in enumerate(fake_data):
+            for s in i:
+                x.append((s, j))
+        df = pd.DataFrame(x, columns=['time [s]', 'Neuron ID'])
+        g = sns.JointGrid(x=df['time [s]'], y=df['Neuron ID'])
+        g = g.plot_joint(plt.scatter, marker="|")
+        # g = g.plot_marginals(sns.distplot)
+        # mx = np.mean(fake, axis=0)
+        my = np.sum(fake_data, axis=1) / rho
+        # g.ax_marg_x.step(x=np.linspace(0, 6, len(mx)), y=mx)
+        g.ax_marg_y.step(my, y=range(len(my)), where='pre', color=cmap[5])
+        g.ax_marg_x.hist(df['time [s]'], bins=32,
+                         histtype='step', color=cmap[5], lw=1.5)
+        g.ax_marg_x.set_title('counts')
+        g.ax_marg_y.set_title('rate [Hz]')
+        # g.ax_marg_y.barh(range(len(my)), width=my)
+        # g.ax_marg_x.fill_between(np.linspace(0, 6, len(mx)), mx, step='pre')
+        # g.ax_marg_y.fill_between(y1=range(0, 64), x=my, step='pre')
+        g.fig.suptitle('Generated spikes')
+        plt.setp(g.ax_marg_x.get_yticklabels(), visible=True)
+        plt.setp(g.ax_marg_y.get_xticklabels(), visible=True)
+        if save:
+            plt.savefig(figname)
+        plt.show()
+
+
+g = GeneratorPlotter('logs/wgan-out/generator_state.pt')
+g.plot_dot_display_joint()
