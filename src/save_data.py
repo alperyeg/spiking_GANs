@@ -25,6 +25,8 @@ parser.add_argument('--filename', required=False, type=str,
                     help='Name of the file to be saved')
 parser.add_argument('--path', required=False, type=str, default='logs/data',
                     help='Path of the file to be saved')
+# parser.add_argument('--xi', required=False, type=int, help='Pattern size if'
+#                     '`data_type` is `pattern`', default=15)
 
 opt = parser.parse_args()
 print(opt)
@@ -36,6 +38,7 @@ Supported data types are so far (step_rate | variability | pattern)
 # Number of data samples
 num_samples = 10000
 imageSize = 32
+xi = 15
 save_dict = {}
 try:
     JOB_ID = int(os.environ['SLURM_JOB_ID'])
@@ -75,7 +78,7 @@ def generate_data(data_type, index, encode=False):
     elif data_type == 'pattern':
         np.random.seed(index)
         d = DataDistribution.generate_stp_data(n_neurons=1, rate=10 * pq.Hz,
-                                               occurr=7, xi=imageSize,
+                                               occurr=7, xi=xi,
                                                t_stop=6 * pq.s,
                                                delay=0 * pq.ms)
         d = d['patterns']
@@ -83,6 +86,29 @@ def generate_data(data_type, index, encode=False):
         # sts_final = stp + sts
         # d = d['data']
     return d
+
+
+def create_norm_data(encoded_data, method='None'):
+        norm_data = np.zeros((len(encoded_data), 1, imageSize, imageSize),
+                             dtype=np.float32)
+        norm_value = 0
+        for ed in encoded_data:
+            # calc max value in the data set
+            max_val = np.max(ed)
+            if max_val > norm_value:
+                norm_value = max_val
+        np.random.seed(0)
+        # normalize
+        for i, ed in enumerate(encoded_data):
+            if method == 'inject':
+                # inject in a random position but together the arrays
+                # inbetween the matrix
+                rnd = np.random.randint(low=0, high=(imageSize - xi))
+                norm_data[i][0][rnd:rnd + ed.shape[0]] = np.divide(ed, norm_value)
+            else:
+                dat = np.array(ed).reshape((1, xi, imageSize))
+                norm_data[i] = np.divide(dat, norm_value)
+        return norm_data, norm_value
 
 
 if __name__ == '__main__':
@@ -99,7 +125,7 @@ if __name__ == '__main__':
                     raw_data.append(data.get())
                     encoded_data.extend(
                         encoder(data.get(), imageSize, 200 * pq.ms,
-                                min_spikes=7, start_val=1))
+                                min_spikes=7, start_val=0))
             else:
                 for i, data in enumerate(data_all):
                     dat = data[0].to_array().ravel()
@@ -117,18 +143,9 @@ if __name__ == '__main__':
         print('done generating data, in sec: {}'.format(time.time() - t))
 
     if opt.encoding:
-        norm_data = np.empty((len(encoded_data), 1, imageSize, imageSize),
-                             dtype=np.float32)
-        norm_value = 0
-        for ed in encoded_data:
-            # calc max value in the data set
-            max_val = np.max(ed)
-            if max_val > norm_value:
-                norm_value = max_val
         # normalize
-        for i, ed in enumerate(encoded_data):
-            dat = np.array(ed).reshape((1, imageSize, imageSize))
-            norm_data[i] = np.divide(dat, norm_value)
+        norm_data, norm_value = create_norm_data(encoded_data, method='inject')
+        # save
         save_dict['normed_data'] = norm_data
         save_dict['num_samples'] = num_samples
         save_dict['imageSize'] = imageSize
@@ -147,7 +164,7 @@ if __name__ == '__main__':
     if opt.filename:
         fname = opt.filename
     else:
-        fname = 'data_NS{}_IS{}_type-{}_encoded-{}_rate{}.npy'.format(
+        fname = 'train-data_NS{}_IS{}_type-{}_encoded-{}_rate{}.npy'.format(
             num_samples, imageSize, opt.data_type, opt.encoding,
             ARRAY_ID)
     u = str(uuid.uuid4())
