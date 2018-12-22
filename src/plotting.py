@@ -701,11 +701,8 @@ class GeneratorPlotter(object):
 
         :param generator_path: string, path to pre-saved generator file
         """
-        self.aG = GoodGenerator()
-        self.aG.load_state_dict(torch.load(generator_path,
-                                           map_location=map_location))
-        # alternatively give location
-        # self.aG = torch.load(generator_path, map_location=map_location)
+        self.aG = torch.load(generator_path)
+        self.aG = self.aG.to(map_location)
 
     def plot_dot_display_joint(self, shapes=(32, 128),
                                reshapes=(32, 1, 32, 32),
@@ -713,9 +710,13 @@ class GeneratorPlotter(object):
                                rho=6.,
                                save=False, figname=""):
         sn = sample_num
-        fakes = self.aG(torch.randn(shapes))
-        fakes = fakes.reshape(reshapes)
-        fake_data = fakes[sn[0], sn[1]].detach().numpy() * rho
+        noise = torch.randn(shapes).to("cpu")
+        with torch.no_grad():
+            noise_v = noise
+        fakes = self.aG(noise_v)
+        # tanh used as nonlin., therefore rescale
+        fakes = (fakes.reshape(reshapes) + 1) * 0.5
+        fake_data = (fakes[sn[0], sn[1]].detach().numpy() + 1) * rho * 0.5
         x = []
         for j, i in enumerate(fake_data):
             for s in i:
