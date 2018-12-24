@@ -701,8 +701,7 @@ class GeneratorPlotter(object):
 
         :param generator_path: string, path to pre-saved generator file
         """
-        self.aG = torch.load(generator_path)
-        self.aG = self.aG.to(map_location)
+        self.aG = torch.load(generator_path, map_location=map_location)
 
     def plot_dot_display_joint(self, shapes=(32, 128),
                                reshapes=(32, 1, 32, 32),
