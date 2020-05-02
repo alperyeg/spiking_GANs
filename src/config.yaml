@@ -2,7 +2,7 @@
 ### parameter config file ###
 #############################
 
-dataroot: '../logs/data/2e4b108e-dd95-4abf-8e68-39130665f560/' # to dataset
+dataroot: '../logs/data/1a446b43-0b14-4970-a80b-ef195796487d' # to dataset
 dataname: 'train-data_NS10000_IS32_type-pattern_encoded-True_rate10.npy' # Name of dataset, use together with dataroot to navigate to the dataset
 val_dir : '../logs/data/2e4b108e-dd95-4abf-8e68-39130665f560/test-data_NS10000_IS32_type-pattern_encoded-True_rate10.npy'
 data_type: 'spikes' # step_rate | variability | pattern

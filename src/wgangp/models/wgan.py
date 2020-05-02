@@ -218,7 +218,25 @@ class GoodGenerator(nn.Module):
         output = self.conv1(output)
         output = self.tanh(output)
         output = output.view(-1, OUTPUT_DIM)
+        # output = self.correct_spikes(output)
         return output
+
+    @staticmethod
+    def correct_spikes(spiketrains):
+        """
+        Checks if spikes are in correct order by `st[t-1] < st[t]` for all
+        spikes, if not replaces the actual spike time with the previous one
+
+        :param spiketrains: tensor: Input with spikes to be checked for
+        :return: tensor: Tensor with corrected spike times
+        """
+        spiketrains = spiketrains.clone()
+        for j, st in enumerate(spiketrains):
+            for i, s in enumerate(st):
+                if i > 0:
+                    if st[i] < st[i-1]:
+                        spiketrains[j, i] = st[i - 1]
+        return spiketrains
 
 
 class GoodDiscriminator(nn.Module):
